@@ -1,0 +1,10 @@
+streamlit
+pandas
+numpy
+plotly
+fpdf2
+fpdf
+reportlab
+weasyprint
+kaleido
+scipy
