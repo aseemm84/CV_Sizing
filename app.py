@@ -66,7 +66,7 @@ st.title("Control Valve Sizing and Selection Wizard")
 
 # --- STEP 1: Enhanced Process Conditions ---
 if st.session_state.step == 1:
-    st.header("Step 1: Enhanced Process Conditions")
+    st.header("Step 1: Process Conditions")
 
     if 'step1_data' not in st.session_state:
         st.session_state.step1_data = {
@@ -162,7 +162,7 @@ if st.session_state.step == 1:
 
 # --- STEP 2: Enhanced Valve Selection ---
 elif st.session_state.step == 2:
-    st.header("Step 2: Enhanced Valve Type and Characteristics")
+    st.header("Step 2: Valve Type and Characteristics")
 
     if 'step2_data' not in st.session_state:
         initial_valve_type = "Globe"
@@ -294,7 +294,7 @@ elif st.session_state.step == 2:
 
 # --- STEP 3: Enhanced Sizing Calculations ---
 elif st.session_state.step == 3:
-    st.header("Step 3: Enhanced Sizing Calculation Results")
+    st.header("Step 3: Sizing Calculation Results")
 
     try:
         # Perform calculations with enhanced methods
@@ -320,7 +320,7 @@ elif st.session_state.step == 3:
 
         # Enhanced Cavitation Analysis with ISA RP75.23
         if 'sigma_analysis' in results:
-            with st.expander("Enhanced Cavitation Analysis (ISA RP75.23)", expanded=True):
+            with st.expander("Cavitation Analysis (ISA RP75.23)", expanded=True):
                 sigma_results = results['sigma_analysis']
 
                 col1, col2, col3, col4 = st.columns(4)
@@ -374,7 +374,7 @@ elif st.session_state.step == 3:
                     st.plotly_chart(fig, use_container_width=True)
 
         # Enhanced Rangeability Analysis with Industry Standards
-        with st.expander("Enhanced Rangeability Analysis", expanded=True):
+        with st.expander("Rangeability Analysis", expanded=True):
             valve_size = st.session_state.input_data['valve_size_nominal']
             valve_type = st.session_state.input_data['valve_type']
             valve_style = st.session_state.input_data['valve_style']
@@ -458,7 +458,7 @@ elif st.session_state.step == 3:
 
 # --- STEP 4: Enhanced Noise Prediction ---
 elif st.session_state.step == 4:
-    st.header("Step 4: Enhanced Noise Prediction")
+    st.header("Step 4: Noise Prediction")
 
     # Method selection reminder
     method_description = {
@@ -538,10 +538,10 @@ elif st.session_state.step == 4:
 
 # --- STEP 5: Enhanced Actuator, Materials & Final Selection ---
 elif st.session_state.step == 5:
-    st.header("Step 5: Enhanced Actuator, Materials, and Final Selection")
+    st.header("Step 5: Actuator, Materials, and Final Selection")
 
     # Enhanced Actuator Sizing
-    with st.expander("Enhanced Actuator Sizing", expanded=True):
+    with st.expander("Actuator Sizing", expanded=True):
         fail_position = st.radio("Fail-Safe Position", ["Fail Close (FC)", "Fail Open (FO)"], horizontal=True)
         st.session_state.input_data['fail_position'] = fail_position
 
@@ -583,7 +583,7 @@ elif st.session_state.step == 5:
                         st.write(f"• {key.replace('_', ' ').title()}: {value:.0f} ft-lbf")
 
     # Enhanced Material Selection
-    with st.expander("Enhanced Material Selection", expanded=True):
+    with st.expander("Material Selection", expanded=True):
         material_results = materials.select_materials(st.session_state.input_data)
         st.session_state.results.update(material_results)
 
@@ -615,7 +615,7 @@ elif st.session_state.step == 5:
                 st.write(f"**{component}:** {', '.join(options)}")
 
     # Enhanced Valve Characteristic Curve
-    with st.expander("Enhanced Valve Dynamic Characteristic", expanded=True):
+    with st.expander("Valve Dynamic Characteristic", expanded=True):
         try:
             fig = helpers.plot_valve_characteristic(st.session_state.input_data, st.session_state.results['cv'])
             st.plotly_chart(fig, use_container_width=True)
@@ -636,11 +636,11 @@ elif st.session_state.step == 5:
     with col1:
         st.button("⬅️ Back to Step 4", on_click=prev_step)
     with col2:
-        st.button("Finalize and Generate Enhanced Report ➡️", on_click=next_step)
+        st.button("Finalize and Generate Report ➡️", on_click=next_step)
 
 # --- STEP 6: Enhanced Summary and Report Generation ---
 elif st.session_state.step == 6:
-    st.header("Step 6: Enhanced Summary and Report")
+    st.header("Step 6: Summary and Report")
 
     # Comprehensive summary
     st.subheader("Executive Summary")
@@ -685,7 +685,7 @@ elif st.session_state.step == 6:
             st.json(display_results)
 
     # Report generation
-    st.subheader("Generate Enhanced PDF Report")
+    st.subheader("Generate Report")
 
     report_options = st.columns(2)
     with report_options[0]:
