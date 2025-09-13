@@ -11,7 +11,7 @@ from reporting import pdf_generator
 from utils import helpers
 from standards.isa_rp75_23 import get_cavitation_chart_data
 
-st.set_page_config(layout="wide", page_title="Enhanced Control Valve Sizing & Selection")
+st.set_page_config(layout="wide", page_title="Control Valve Sizing & Selection")
 
 # --- APP STATE INITIALIZATION ---
 if 'step' not in st.session_state:
@@ -30,7 +30,7 @@ def prev_step():
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.image("https://placehold.co/300x100/003366/FFFFFF?text=ENHANCED+VALVE+SIZING", use_container_width=True)
+    st.image("https://placehold.co/300x100/003366/FFFFFF?text=CONTROL+VALVE+SIZING", use_container_width=True)
     st.title("Navigation")
     st.write("---")
 
@@ -59,10 +59,10 @@ with st.sidebar:
     st.success("✅ NACE MR0175")
     st.success("✅ ASME B16.34")
     st.write("---")
-    st.write("Enhanced Professional-Grade Application")
+    st.write("Enhanced Professional-Grade Application by Aseem Mehrotra")
 
 # --- MAIN APPLICATION WIZARD ---
-st.title("Enhanced Control Valve Sizing and Selection Wizard")
+st.title("Control Valve Sizing and Selection Wizard")
 
 # --- STEP 1: Enhanced Process Conditions ---
 if st.session_state.step == 1:
