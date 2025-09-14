@@ -20,14 +20,9 @@ st.set_page_config(layout="wide", page_title="Control Valve Sizing & Selection",
 def load_logo():
     """Load and display the application logo"""
     try:
-        # You can replace this URL with your actual logo file path
-        # For now, I'll create a placeholder that you can replace
+        
         logo_html = """
-        <div style="text-align: center; padding: 10px; background: linear-gradient(135deg, #003366 0%, #0066cc 100%); border-radius: 10px; margin-bottom: 20px;">
-            <h2 style="color: white; margin: 0; font-family: 'Arial', sans-serif; font-weight: bold;">⚙️ CONTROL VALVE</h2>
-            <h3 style="color: #66ccff; margin: 0; font-family: 'Arial', sans-serif; font-weight: normal;">SIZING & SELECTION</h3>
-            <p style="color: #cccccc; margin: 5px 0 0 0; font-size: 12px;">Professional Engineering Tool</p>
-        </div>
+        https://github.com/aseemm84/CV_Sizing/blob/main/valve_image.png
         """
         return logo_html
     except Exception as e:
