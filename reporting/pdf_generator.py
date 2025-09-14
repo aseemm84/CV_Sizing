@@ -6,6 +6,7 @@ from datetime import datetime
 import io
 import os
 import tempfile
+import base64
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
@@ -14,59 +15,45 @@ import numpy as np
 def create_pdf_report(report_data):
     """
     Create comprehensive PDF report with charts and graphs
+    Enhanced with better error handling and robust fallbacks
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"valve_sizing_report_{timestamp}.pdf"
     
-    # Generate charts first
-    chart_files = generate_charts_for_report(report_data)
+    # Generate charts first as byte streams (more reliable than files)
+    chart_data = generate_charts_as_bytes(report_data)
     
     # Try fpdf2 first (recommended)
     try:
-        pdf_bytes = create_comprehensive_pdf_with_charts(report_data, chart_files)
+        pdf_bytes = create_comprehensive_pdf_with_charts(report_data, chart_data)
         return filename, pdf_bytes
     except ImportError:
-        print("fpdf2 not available, trying ReportLab...")
+        print("fpdf2 not available, trying alternative methods...")
     except Exception as e:
-        print(f"fpdf2 error: {e}, trying ReportLab...")
-        
-    # Try ReportLab as backup
+        print(f"fpdf2 error: {e}, trying alternative methods...")
+    
+    # Try HTML to PDF conversion as backup
     try:
-        pdf_bytes = create_pdf_with_reportlab_unicode(report_data)
+        pdf_bytes = create_html_to_pdf_report(report_data, chart_data)
         return filename, pdf_bytes
     except ImportError:
-        print("ReportLab not available, creating enhanced text report...")
+        print("HTML-to-PDF libraries not available, using basic PDF...")
     except Exception as e:
-        print(f"ReportLab error: {e}, creating text report...")
-        
-    # Enhanced text fallback
+        print(f"HTML-to-PDF error: {e}, using basic PDF...")
+    
+    # Basic PDF fallback (still generates PDF, not text)
     try:
-        content = create_comprehensive_text_report(report_data)
-        if isinstance(content, str):
-            content_bytes = content.encode('utf-8', errors='replace')
-        else:
-            content_bytes = str(content).encode('utf-8', errors='replace')
-        return filename.replace('.pdf', '.txt'), content_bytes
+        pdf_bytes = create_basic_pdf_with_essential_data(report_data)
+        return filename, pdf_bytes
     except Exception as e:
-        print(f"Text report error: {e}")
-        basic_content = f"""
-VALVE SIZING REPORT ERROR
-========================
-Generated: {report_data.get('report_date', 'Unknown')}
-Error: Could not generate detailed report: {e}
-Required Cv: {report_data.get('results', {}).get('cv', 'N/A')}
+        print(f"Basic PDF error: {e}, creating minimal PDF...")
+        # Ultimate fallback - minimal but still PDF
+        pdf_bytes = create_minimal_pdf_report(report_data)
+        return filename.replace('.pdf', '_minimal.pdf'), pdf_bytes
 
-Please install required libraries:
-pip install fpdf2 matplotlib numpy
-        """
-        return filename.replace('.pdf', '_error.txt'), basic_content.encode('utf-8')
-    finally:
-        # Clean up temporary chart files
-        cleanup_chart_files(chart_files)
-
-def generate_charts_for_report(report_data):
-    """Generate all charts for the report"""
-    chart_files = {}
+def generate_charts_as_bytes(report_data):
+    """Generate all charts as byte streams for embedding"""
+    chart_data = {}
     
     try:
         inputs = report_data.get('inputs', {})
@@ -74,45 +61,59 @@ def generate_charts_for_report(report_data):
         
         # Chart 1: Valve Opening Validation Chart
         if 'rangeability_validation' in results:
-            chart_files['valve_opening'] = create_valve_opening_chart(results['rangeability_validation'])
+            chart_data['valve_opening'] = create_valve_opening_chart_bytes(results['rangeability_validation'])
         
         # Chart 2: Cavitation Analysis Chart
         if 'sigma_analysis' in results:
-            chart_files['cavitation'] = create_cavitation_analysis_chart(results['sigma_analysis'], inputs)
+            chart_data['cavitation'] = create_cavitation_analysis_chart_bytes(results['sigma_analysis'], inputs)
         
         # Chart 3: Valve Characteristic Curve
         valve_type = inputs.get('valve_type', 'Globe')
         valve_char = inputs.get('valve_char', 'Equal Percentage')
         operating_opening = inputs.get('valve_opening_percent', 70)
-        chart_files['characteristic'] = create_valve_characteristic_chart(valve_type, valve_char, operating_opening)
+        chart_data['characteristic'] = create_valve_characteristic_chart_bytes(valve_type, valve_char, operating_opening)
         
         # Chart 4: Pressure Drop Distribution
         p1 = inputs.get('p1', 10)
         p2 = inputs.get('p2', 5)
         pv = inputs.get('pv', 0.03)
         if isinstance(p1, (int, float)) and isinstance(p2, (int, float)):
-            chart_files['pressure_distribution'] = create_pressure_distribution_chart(p1, p2, pv, inputs.get('fluid_type', 'Liquid'))
+            chart_data['pressure_distribution'] = create_pressure_distribution_chart_bytes(p1, p2, pv, inputs.get('fluid_type', 'Liquid'))
         
         # Chart 5: Noise Level Assessment
         noise_level = results.get('total_noise_dba', 0)
         if isinstance(noise_level, (int, float)) and noise_level > 0:
-            chart_files['noise_assessment'] = create_noise_assessment_chart(noise_level)
+            chart_data['noise_assessment'] = create_noise_assessment_chart_bytes(noise_level)
         
         # Chart 6: Flow Regime Analysis (for gas)
         if inputs.get('fluid_type') == 'Gas/Vapor' and 'flow_regime' in results:
-            chart_files['flow_regime'] = create_gas_flow_analysis_chart(results)
+            chart_data['flow_regime'] = create_gas_flow_analysis_chart_bytes(results)
         
         # Chart 7: Safety Factor Analysis
         if 'safety_factor_rec' in inputs:
-            chart_files['safety_factors'] = create_safety_factor_chart(inputs['safety_factor_rec'])
+            chart_data['safety_factors'] = create_safety_factor_chart_bytes(inputs['safety_factor_rec'])
         
     except Exception as e:
         print(f"Chart generation error: {e}")
     
-    return chart_files
+    return chart_data
 
-def create_valve_opening_chart(validation_data):
-    """Create valve opening validation chart"""
+def save_chart_to_bytes(fig):
+    """Save matplotlib figure to bytes for PDF embedding"""
+    img_buffer = io.BytesIO()
+    try:
+        fig.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight', 
+                   facecolor='white', edgecolor='none')
+        img_buffer.seek(0)
+        plt.close(fig)  # Clean up
+        return img_buffer
+    except Exception as e:
+        print(f"Chart save error: {e}")
+        plt.close(fig)
+        return None
+
+def create_valve_opening_chart_bytes(validation_data):
+    """Create valve opening validation chart as bytes"""
     try:
         scenarios = []
         openings = []
@@ -138,40 +139,35 @@ def create_valve_opening_chart(validation_data):
         if not scenarios:
             return None
         
-        plt.figure(figsize=(10, 6))
-        bars = plt.bar(scenarios, openings, color=colors, alpha=0.7, edgecolor='black', linewidth=1)
+        fig, ax = plt.subplots(figsize=(10, 6))
+        bars = ax.bar(scenarios, openings, color=colors, alpha=0.7, edgecolor='black', linewidth=1)
         
         # Add optimal range shading
-        plt.axhspan(20, 80, alpha=0.2, color='green', label='Optimal Range (20-80%)')
+        ax.axhspan(20, 80, alpha=0.2, color='green', label='Optimal Range (20-80%)')
         
         # Add value labels on bars
         for bar, opening in zip(bars, openings):
             height = bar.get_height()
-            plt.text(bar.get_x() + bar.get_width()/2., height + 1,
-                    f'{opening:.1f}%', ha='center', va='bottom', fontweight='bold')
+            ax.text(bar.get_x() + bar.get_width()/2., height + 1,
+                   f'{opening:.1f}%', ha='center', va='bottom', fontweight='bold')
         
-        plt.title('Valve Opening Validation Across Flow Scenarios', fontsize=14, fontweight='bold')
-        plt.xlabel('Flow Scenario', fontsize=12)
-        plt.ylabel('Valve Opening (%)', fontsize=12)
-        plt.ylim(0, 105)
-        plt.grid(True, alpha=0.3, axis='y')
-        plt.legend()
+        ax.set_title('Valve Opening Validation Across Flow Scenarios', fontsize=14, fontweight='bold')
+        ax.set_xlabel('Flow Scenario', fontsize=12)
+        ax.set_ylabel('Valve Opening (%)', fontsize=12)
+        ax.set_ylim(0, 105)
+        ax.grid(True, alpha=0.3, axis='y')
+        ax.legend()
         plt.xticks(rotation=45)
         plt.tight_layout()
         
-        # Save to temporary file
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png', prefix='valve_opening_')
-        plt.savefig(temp_file.name, dpi=150, bbox_inches='tight')
-        plt.close()
-        
-        return temp_file.name
+        return save_chart_to_bytes(fig)
         
     except Exception as e:
         print(f"Valve opening chart error: {e}")
         return None
 
-def create_cavitation_analysis_chart(sigma_data, inputs):
-    """Create ISA RP75.23 cavitation analysis chart"""
+def create_cavitation_analysis_chart_bytes(sigma_data, inputs):
+    """Create ISA RP75.23 cavitation analysis chart as bytes"""
     try:
         valve_type = inputs.get('valve_type', 'Globe')
         valve_style = inputs.get('valve_style', 'Standard')
@@ -192,52 +188,47 @@ def create_cavitation_analysis_chart(sigma_data, inputs):
         
         current_sigma = sigma_data.get('sigma', 2.0)
         
-        plt.figure(figsize=(12, 8))
+        fig, ax = plt.subplots(figsize=(12, 8))
         
         # Create horizontal bar chart
         y_pos = np.arange(len(levels))
-        bars = plt.barh(y_pos, sigma_values, color=colors, alpha=0.7, edgecolor='black')
+        bars = ax.barh(y_pos, sigma_values, color=colors, alpha=0.7, edgecolor='black')
         
         # Add current operating point
-        plt.axvline(x=current_sigma, color='red', linestyle='--', linewidth=3, 
-                   label=f'Operating Point: σ = {current_sigma:.3f}')
+        ax.axvline(x=current_sigma, color='red', linestyle='--', linewidth=3, 
+                  label=f'Operating Point: σ = {current_sigma:.3f}')
         
         # Add text labels
         for i, (bar, sigma_val) in enumerate(zip(bars, sigma_values)):
             if sigma_val > 0:
-                plt.text(sigma_val + 0.1, bar.get_y() + bar.get_height()/2, 
-                        f'σ >= {sigma_val:.1f}', ha='left', va='center', fontweight='bold')
+                ax.text(sigma_val + 0.1, bar.get_y() + bar.get_height()/2, 
+                       f'σ >= {sigma_val:.1f}', ha='left', va='center', fontweight='bold')
         
-        plt.yticks(y_pos, levels)
-        plt.xlabel('Sigma Value (σ)', fontsize=12)
-        plt.ylabel('Cavitation Level', fontsize=12)
-        plt.title(f'ISA RP75.23 Cavitation Analysis - {valve_type} Valve\n{valve_style}', 
-                 fontsize=14, fontweight='bold')
-        plt.grid(True, alpha=0.3, axis='x')
-        plt.legend()
+        ax.set_yticks(y_pos)
+        ax.set_yticklabels(levels)
+        ax.set_xlabel('Sigma Value (σ)', fontsize=12)
+        ax.set_ylabel('Cavitation Level', fontsize=12)
+        ax.set_title(f'ISA RP75.23 Cavitation Analysis - {valve_type} Valve\n{valve_style}', 
+                    fontsize=14, fontweight='bold')
+        ax.grid(True, alpha=0.3, axis='x')
+        ax.legend()
         
         # Add risk assessment text
         risk = sigma_data.get('risk', 'Medium')
         risk_color = {'Low': 'green', 'Medium': 'orange', 'High': 'red', 'Critical': 'darkred'}.get(risk, 'black')
-        plt.text(0.02, 0.98, f'Risk Assessment: {risk}', transform=plt.gca().transAxes, 
-                fontsize=12, fontweight='bold', color=risk_color, 
-                bbox=dict(boxstyle="round,pad=0.3", facecolor='white', alpha=0.8))
+        ax.text(0.02, 0.98, f'Risk Assessment: {risk}', transform=ax.transAxes, 
+               fontsize=12, fontweight='bold', color=risk_color, 
+               bbox=dict(boxstyle="round,pad=0.3", facecolor='white', alpha=0.8))
         
         plt.tight_layout()
-        
-        # Save to temporary file
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png', prefix='cavitation_')
-        plt.savefig(temp_file.name, dpi=150, bbox_inches='tight')
-        plt.close()
-        
-        return temp_file.name
+        return save_chart_to_bytes(fig)
         
     except Exception as e:
         print(f"Cavitation chart error: {e}")
         return None
 
-def create_valve_characteristic_chart(valve_type, valve_char, operating_opening):
-    """Create valve flow characteristic curve"""
+def create_valve_characteristic_chart_bytes(valve_type, valve_char, operating_opening):
+    """Create valve flow characteristic curve as bytes"""
     try:
         # Generate opening percentages
         openings = np.linspace(10, 100, 91)
@@ -253,10 +244,10 @@ def create_valve_characteristic_chart(valve_type, valve_char, operating_opening)
         # Normalize to 0-100%
         flows = (flows / np.max(flows)) * 100
         
-        plt.figure(figsize=(10, 8))
+        fig, ax = plt.subplots(figsize=(10, 8))
         
         # Plot characteristic curve
-        plt.plot(openings, flows, 'b-', linewidth=3, label=f'{valve_char} Characteristic')
+        ax.plot(openings, flows, 'b-', linewidth=3, label=f'{valve_char} Characteristic')
         
         # Add operating point
         if 10 <= operating_opening <= 100:
@@ -267,49 +258,43 @@ def create_valve_characteristic_chart(valve_type, valve_char, operating_opening)
             else:  # Equal Percentage
                 operating_flow = (50**(operating_opening/100 - 1)) / (50**(1-1)) * 100
             
-            plt.plot(operating_opening, operating_flow, 'ro', markersize=12, 
-                    label=f'Operating Point ({operating_opening}%, {operating_flow:.1f}%)')
+            ax.plot(operating_opening, operating_flow, 'ro', markersize=12, 
+                   label=f'Operating Point ({operating_opening}%, {operating_flow:.1f}%)')
             
             # Add operating point lines
-            plt.axvline(x=operating_opening, color='red', linestyle=':', alpha=0.7)
-            plt.axhline(y=operating_flow, color='red', linestyle=':', alpha=0.7)
+            ax.axvline(x=operating_opening, color='red', linestyle=':', alpha=0.7)
+            ax.axhline(y=operating_flow, color='red', linestyle=':', alpha=0.7)
         
         # Add optimal operating range
-        plt.axvspan(20, 80, alpha=0.2, color='green', label='Optimal Operating Range')
+        ax.axvspan(20, 80, alpha=0.2, color='green', label='Optimal Operating Range')
         
         # Add ideal linear line for reference
-        plt.plot([0, 100], [0, 100], 'k--', alpha=0.5, label='Linear Reference')
+        ax.plot([0, 100], [0, 100], 'k--', alpha=0.5, label='Linear Reference')
         
-        plt.xlabel('Valve Opening (%)', fontsize=12)
-        plt.ylabel('Flow Rate (% of Maximum)', fontsize=12)
-        plt.title(f'{valve_type} Valve Flow Characteristic\n{valve_char} Curve', 
-                 fontsize=14, fontweight='bold')
-        plt.grid(True, alpha=0.3)
-        plt.legend()
-        plt.xlim(0, 100)
-        plt.ylim(0, 100)
+        ax.set_xlabel('Valve Opening (%)', fontsize=12)
+        ax.set_ylabel('Flow Rate (% of Maximum)', fontsize=12)
+        ax.set_title(f'{valve_type} Valve Flow Characteristic\n{valve_char} Curve', 
+                    fontsize=14, fontweight='bold')
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+        ax.set_xlim(0, 100)
+        ax.set_ylim(0, 100)
         
         # Add rangeability information
-        plt.text(0.02, 0.98, f'Valve Type: {valve_type}', transform=plt.gca().transAxes, 
-                fontsize=10, bbox=dict(boxstyle="round,pad=0.3", facecolor='white', alpha=0.8))
+        ax.text(0.02, 0.98, f'Valve Type: {valve_type}', transform=ax.transAxes, 
+               fontsize=10, bbox=dict(boxstyle="round,pad=0.3", facecolor='white', alpha=0.8))
         
         plt.tight_layout()
-        
-        # Save to temporary file
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png', prefix='characteristic_')
-        plt.savefig(temp_file.name, dpi=150, bbox_inches='tight')
-        plt.close()
-        
-        return temp_file.name
+        return save_chart_to_bytes(fig)
         
     except Exception as e:
         print(f"Characteristic chart error: {e}")
         return None
 
-def create_pressure_distribution_chart(p1, p2, pv, fluid_type):
-    """Create pressure distribution analysis chart"""
+def create_pressure_distribution_chart_bytes(p1, p2, pv, fluid_type):
+    """Create pressure distribution analysis chart as bytes"""
     try:
-        plt.figure(figsize=(10, 6))
+        fig, ax = plt.subplots(figsize=(10, 6))
         
         # Create pressure distribution
         pressures = [p1, p2, pv] if fluid_type == 'Liquid' else [p1, p2]
@@ -317,63 +302,57 @@ def create_pressure_distribution_chart(p1, p2, pv, fluid_type):
         colors = ['#4472C4', '#E70000', '#70AD47'] if fluid_type == 'Liquid' else ['#4472C4', '#E70000']
         
         # Bar chart
-        bars = plt.bar(labels, pressures, color=colors, alpha=0.7, edgecolor='black')
+        bars = ax.bar(labels, pressures, color=colors, alpha=0.7, edgecolor='black')
         
         # Add value labels
         for bar, pressure in zip(bars, pressures):
             height = bar.get_height()
-            plt.text(bar.get_x() + bar.get_width()/2., height + max(pressures)*0.01,
-                    f'{pressure:.2f} bar', ha='center', va='bottom', fontweight='bold')
+            ax.text(bar.get_x() + bar.get_width()/2., height + max(pressures)*0.01,
+                   f'{pressure:.2f} bar', ha='center', va='bottom', fontweight='bold')
         
         # Add differential pressure
         dp = p1 - p2
-        plt.text(0.5, max(pressures) * 0.8, f'ΔP = {dp:.2f} bar', 
-                ha='center', transform=plt.gca().transData,
-                bbox=dict(boxstyle="round,pad=0.5", facecolor='yellow', alpha=0.8),
-                fontsize=12, fontweight='bold')
+        ax.text(0.5, max(pressures) * 0.8, f'ΔP = {dp:.2f} bar', 
+               ha='center', transform=ax.transData,
+               bbox=dict(boxstyle="round,pad=0.5", facecolor='yellow', alpha=0.8),
+               fontsize=12, fontweight='bold')
         
         # Add pressure ratio for liquids
         if fluid_type == 'Liquid' and pv > 0:
             pressure_ratio = (p1 - pv) / (p1 - p2)
-            plt.text(0.02, 0.98, f'Pressure Ratio (P1-Pv)/(P1-P2): {pressure_ratio:.3f}', 
-                    transform=plt.gca().transAxes, fontsize=10,
-                    bbox=dict(boxstyle="round,pad=0.3", facecolor='white', alpha=0.8))
+            ax.text(0.02, 0.98, f'Pressure Ratio (P1-Pv)/(P1-P2): {pressure_ratio:.3f}', 
+                   transform=ax.transAxes, fontsize=10,
+                   bbox=dict(boxstyle="round,pad=0.3", facecolor='white', alpha=0.8))
         
-        plt.ylabel('Pressure (bar)', fontsize=12)
-        plt.title(f'{fluid_type} Service - Pressure Distribution Analysis', fontsize=14, fontweight='bold')
-        plt.grid(True, alpha=0.3, axis='y')
-        plt.ylim(0, max(pressures) * 1.2)
+        ax.set_ylabel('Pressure (bar)', fontsize=12)
+        ax.set_title(f'{fluid_type} Service - Pressure Distribution Analysis', fontsize=14, fontweight='bold')
+        ax.grid(True, alpha=0.3, axis='y')
+        ax.set_ylim(0, max(pressures) * 1.2)
         
         plt.tight_layout()
-        
-        # Save to temporary file
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png', prefix='pressure_')
-        plt.savefig(temp_file.name, dpi=150, bbox_inches='tight')
-        plt.close()
-        
-        return temp_file.name
+        return save_chart_to_bytes(fig)
         
     except Exception as e:
         print(f"Pressure chart error: {e}")
         return None
 
-def create_noise_assessment_chart(noise_level):
-    """Create noise level assessment chart"""
+def create_noise_assessment_chart_bytes(noise_level):
+    """Create noise level assessment chart as bytes"""
     try:
         # Define noise level ranges
         ranges = ['Acceptable\n<85 dBA', 'Moderate\n85-100 dBA', 'High\n100-110 dBA', 'Extreme\n>110 dBA']
         levels = [85, 100, 110, 130]  # Upper limits for visualization
         colors = ['#2E8B57', '#FFD700', '#FFA500', '#DC143C']
         
-        plt.figure(figsize=(10, 6))
+        fig, ax = plt.subplots(figsize=(10, 6))
         
         # Create horizontal bar chart showing ranges
         y_pos = np.arange(len(ranges))
-        bars = plt.barh(y_pos, levels, color=colors, alpha=0.7, edgecolor='black')
+        bars = ax.barh(y_pos, levels, color=colors, alpha=0.7, edgecolor='black')
         
         # Add current noise level line
-        plt.axvline(x=noise_level, color='red', linestyle='-', linewidth=4, 
-                   label=f'Predicted Level: {noise_level:.1f} dBA')
+        ax.axvline(x=noise_level, color='red', linestyle='-', linewidth=4, 
+                  label=f'Predicted Level: {noise_level:.1f} dBA')
         
         # Determine current level category
         if noise_level < 85:
@@ -389,18 +368,19 @@ def create_noise_assessment_chart(noise_level):
             category = "EXTREME"
             category_color = 'darkred'
         
-        plt.yticks(y_pos, ranges)
-        plt.xlabel('Noise Level (dBA)', fontsize=12)
-        plt.ylabel('Assessment Category', fontsize=12)
-        plt.title('Noise Level Assessment at 1 Meter Distance', fontsize=14, fontweight='bold')
-        plt.grid(True, alpha=0.3, axis='x')
-        plt.legend()
-        plt.xlim(0, 130)
+        ax.set_yticks(y_pos)
+        ax.set_yticklabels(ranges)
+        ax.set_xlabel('Noise Level (dBA)', fontsize=12)
+        ax.set_ylabel('Assessment Category', fontsize=12)
+        ax.set_title('Noise Level Assessment at 1 Meter Distance', fontsize=14, fontweight='bold')
+        ax.grid(True, alpha=0.3, axis='x')
+        ax.legend()
+        ax.set_xlim(0, 130)
         
         # Add assessment text
-        plt.text(0.02, 0.98, f'Assessment: {category}', transform=plt.gca().transAxes, 
-                fontsize=14, fontweight='bold', color=category_color,
-                bbox=dict(boxstyle="round,pad=0.3", facecolor='white', alpha=0.8))
+        ax.text(0.02, 0.98, f'Assessment: {category}', transform=ax.transAxes, 
+               fontsize=14, fontweight='bold', color=category_color,
+               bbox=dict(boxstyle="round,pad=0.3", facecolor='white', alpha=0.8))
         
         # Add recommendations
         recommendations = {
@@ -410,25 +390,19 @@ def create_noise_assessment_chart(noise_level):
             "EXTREME": "Immediate mitigation essential"
         }
         
-        plt.text(0.02, 0.88, f'Recommendation: {recommendations[category]}', 
-                transform=plt.gca().transAxes, fontsize=10,
-                bbox=dict(boxstyle="round,pad=0.3", facecolor='lightblue', alpha=0.8))
+        ax.text(0.02, 0.88, f'Recommendation: {recommendations[category]}', 
+               transform=ax.transAxes, fontsize=10,
+               bbox=dict(boxstyle="round,pad=0.3", facecolor='lightblue', alpha=0.8))
         
         plt.tight_layout()
-        
-        # Save to temporary file
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png', prefix='noise_')
-        plt.savefig(temp_file.name, dpi=150, bbox_inches='tight')
-        plt.close()
-        
-        return temp_file.name
+        return save_chart_to_bytes(fig)
         
     except Exception as e:
         print(f"Noise chart error: {e}")
         return None
 
-def create_gas_flow_analysis_chart(results):
-    """Create gas flow analysis chart"""
+def create_gas_flow_analysis_chart_bytes(results):
+    """Create gas flow analysis chart as bytes"""
     try:
         # Extract gas flow parameters
         mach_number = results.get('mach_number', 0)
@@ -461,7 +435,6 @@ def create_gas_flow_analysis_chart(results):
         ax2.set_ylim(0, 1)
         
         # Chart 3: Pressure Ratio
-        critical_ratio = 0.53  # Typical for air
         ax3.pie([pressure_ratio, 1-pressure_ratio], labels=['Pressure Drop', 'Recovered Pressure'], 
                autopct='%1.1f%%', startangle=90)
         ax3.set_title(f'Pressure Drop Ratio (x): {pressure_ratio:.3f}')
@@ -476,20 +449,14 @@ def create_gas_flow_analysis_chart(results):
         ax4.set_ylim(0, 1.2)
         
         plt.tight_layout()
-        
-        # Save to temporary file
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png', prefix='gas_flow_')
-        plt.savefig(temp_file.name, dpi=150, bbox_inches='tight')
-        plt.close()
-        
-        return temp_file.name
+        return save_chart_to_bytes(fig)
         
     except Exception as e:
         print(f"Gas flow chart error: {e}")
         return None
 
-def create_safety_factor_chart(safety_factor_data):
-    """Create safety factor breakdown chart"""
+def create_safety_factor_chart_bytes(safety_factor_data):
+    """Create safety factor breakdown chart as bytes"""
     try:
         # Extract safety factor components
         base_factor = 1.1
@@ -503,22 +470,22 @@ def create_safety_factor_chart(safety_factor_data):
         values = [base_factor, service_factor, criticality_factor, expansion_factor]
         colors = ['#4472C4', '#E70000', '#70AD47', '#FFC000']
         
-        plt.figure(figsize=(10, 6))
+        fig, ax = plt.subplots(figsize=(10, 6))
         
         # Create stacked bar
         bottom = 0
         for i, (component, value, color) in enumerate(zip(components, values, colors)):
             if value > 0:
-                plt.bar(0, value, bottom=bottom, color=color, label=f'{component}: +{value:.1f}', 
-                       width=0.5, edgecolor='black')
+                ax.bar(0, value, bottom=bottom, color=color, label=f'{component}: +{value:.1f}', 
+                      width=0.5, edgecolor='black')
                 # Add value label
-                plt.text(0, bottom + value/2, f'+{value:.1f}', ha='center', va='center', 
-                        fontweight='bold', color='white' if value > 0.2 else 'black')
+                ax.text(0, bottom + value/2, f'+{value:.1f}', ha='center', va='center', 
+                       fontweight='bold', color='white' if value > 0.2 else 'black')
                 bottom += value
         
         # Add total line
-        plt.axhline(y=total_factor, color='red', linestyle='--', linewidth=2, 
-                   label=f'Total Factor: {total_factor:.1f}')
+        ax.axhline(y=total_factor, color='red', linestyle='--', linewidth=2, 
+                  label=f'Total Factor: {total_factor:.1f}')
         
         # Add category assessment
         if total_factor <= 1.25:
@@ -531,39 +498,24 @@ def create_safety_factor_chart(safety_factor_data):
             category = "Conservative"
             cat_color = 'red'
         
-        plt.text(0.6, total_factor, f'{category}\nApproach', ha='center', va='center',
-                bbox=dict(boxstyle="round,pad=0.3", facecolor=cat_color, alpha=0.3),
-                fontsize=12, fontweight='bold')
+        ax.text(0.6, total_factor, f'{category}\nApproach', ha='center', va='center',
+               bbox=dict(boxstyle="round,pad=0.3", facecolor=cat_color, alpha=0.3),
+               fontsize=12, fontweight='bold')
         
-        plt.ylabel('Safety Factor', fontsize=12)
-        plt.title('Safety Factor Breakdown Analysis', fontsize=14, fontweight='bold')
-        plt.legend(loc='upper left', bbox_to_anchor=(1.02, 1))
-        plt.grid(True, alpha=0.3, axis='y')
-        plt.xlim(-0.5, 1.5)
-        plt.ylim(0, total_factor * 1.2)
-        plt.xticks([])  # Remove x-axis ticks
+        ax.set_ylabel('Safety Factor', fontsize=12)
+        ax.set_title('Safety Factor Breakdown Analysis', fontsize=14, fontweight='bold')
+        ax.legend(loc='upper left', bbox_to_anchor=(1.02, 1))
+        ax.grid(True, alpha=0.3, axis='y')
+        ax.set_xlim(-0.5, 1.5)
+        ax.set_ylim(0, total_factor * 1.2)
+        ax.set_xticks([])  # Remove x-axis ticks
         
         plt.tight_layout()
-        
-        # Save to temporary file
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png', prefix='safety_factor_')
-        plt.savefig(temp_file.name, dpi=150, bbox_inches='tight')
-        plt.close()
-        
-        return temp_file.name
+        return save_chart_to_bytes(fig)
         
     except Exception as e:
         print(f"Safety factor chart error: {e}")
         return None
-
-def cleanup_chart_files(chart_files):
-    """Clean up temporary chart files"""
-    for chart_file in chart_files.values():
-        if chart_file and os.path.exists(chart_file):
-            try:
-                os.unlink(chart_file)
-            except:
-                pass
 
 def clean_unicode_for_pdf(text):
     """Clean Unicode characters for PDF compatibility"""
@@ -595,9 +547,12 @@ def clean_unicode_for_pdf(text):
     
     return cleaned_text
 
-def create_comprehensive_pdf_with_charts(report_data, chart_files):
+def create_comprehensive_pdf_with_charts(report_data, chart_data):
     """Create comprehensive professional PDF with embedded charts"""
-    from fpdf import FPDF
+    try:
+        from fpdf import FPDF
+    except ImportError:
+        raise ImportError("fpdf2 library not available")
     
     class ProfessionalValvePDFWithCharts(FPDF):
         def header(self):
@@ -609,7 +564,7 @@ def create_comprehensive_pdf_with_charts(report_data, chart_files):
                 self.ln(8)
             except Exception as e:
                 print(f"Header error: {e}")
-            
+        
         def footer(self):
             try:
                 self.set_y(-15)
@@ -650,9 +605,9 @@ def create_comprehensive_pdf_with_charts(report_data, chart_files):
             self.set_font('Arial', '', 10)
             self.safe_cell(0, 6, str(value), 0, 1)
         
-        def add_chart(self, chart_file, title, width=160, height=None):
-            """Add chart to PDF with title"""
-            if chart_file and os.path.exists(chart_file):
+        def add_chart_from_bytes(self, chart_bytes, title, width=160, height=None):
+            """Add chart to PDF from byte stream with title"""
+            if chart_bytes:
                 try:
                     self.ln(5)
                     self.set_font('Arial', 'B', 12)
@@ -666,15 +621,27 @@ def create_comprehensive_pdf_with_charts(report_data, chart_files):
                     # Center the image
                     x_pos = (self.w - width) / 2
                     
-                    self.image(chart_file, x=x_pos, w=width, h=height)
+                    # Create temporary file for fpdf
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as temp_file:
+                        chart_bytes.seek(0)
+                        temp_file.write(chart_bytes.read())
+                        temp_file_path = temp_file.name
+                    
+                    self.image(temp_file_path, x=x_pos, w=width, h=height)
                     self.ln(5)
+                    
+                    # Clean up temporary file
+                    try:
+                        os.unlink(temp_file_path)
+                    except:
+                        pass
+                        
                 except Exception as e:
                     print(f"Chart insertion error: {e}")
                     self.safe_cell(0, 10, f"Chart unavailable: {title}", 1, 1, 'C')
             else:
-                print(f"Chart file not found: {chart_file}")
                 self.safe_cell(0, 10, f"Chart unavailable: {title}", 1, 1, 'C')
-
+    
     pdf = ProfessionalValvePDFWithCharts()
     pdf.add_page()
     
@@ -684,14 +651,13 @@ def create_comprehensive_pdf_with_charts(report_data, chart_files):
         
         # Report Header Information
         pdf.set_font('Arial', '', 11)
-        pdf.safe_cell(0, 6, f"Generated: {report_data.get('report_date', 'Unknown')}", 0, 1)
+        pdf.safe_cell(0, 6, f"Generated: {report_data.get('report_date', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))}", 0, 1)
         pdf.safe_cell(0, 6, f"Software: Enhanced Valve Sizing Application v2.0", 0, 1)
         pdf.safe_cell(0, 6, f"Analysis: Professional Engineering with Visual Charts", 0, 1)
         
         # Standards compliance
-        if 'standards_compliance' in report_data:
-            standards = ', '.join(report_data['standards_compliance'])
-            pdf.safe_cell(0, 6, f"Standards: {standards}", 0, 1)
+        standards = ['ISA S75.01/IEC 60534-2-1', 'ISA RP75.23', 'IEC 60534-8-3', 'API 6D', 'NACE MR0175', 'ASME B16.34']
+        pdf.safe_cell(0, 6, f"Standards: {', '.join(standards)}", 0, 1)
         
         # EXECUTIVE SUMMARY
         pdf.section_header('EXECUTIVE SUMMARY')
@@ -730,31 +696,49 @@ def create_comprehensive_pdf_with_charts(report_data, chart_files):
         if isinstance(noise_level, (int, float)):
             noise_status = "ACCEPTABLE" if noise_level < 85 else "HIGH" if noise_level < 110 else "EXTREME"
             pdf.add_key_value_pair("Noise Level", f"{noise_level:.1f} dBA ({noise_status})")
-
+        
         # CHART 1: Valve Opening Validation
-        if 'valve_opening' in chart_files:
+        if 'valve_opening' in chart_data and chart_data['valve_opening']:
             pdf.add_page()
-            pdf.add_chart(chart_files['valve_opening'], 
-                         'Figure 1: Valve Opening Validation Across Flow Scenarios')
-
-        # CHART 2: Cavitation Analysis  
-        if 'cavitation' in chart_files:
+            pdf.add_chart_from_bytes(chart_data['valve_opening'], 
+                                   'Figure 1: Valve Opening Validation Across Flow Scenarios')
+        
+        # CHART 2: Cavitation Analysis 
+        if 'cavitation' in chart_data and chart_data['cavitation']:
             pdf.add_page()
-            pdf.add_chart(chart_files['cavitation'], 
-                         'Figure 2: ISA RP75.23 Cavitation Analysis')
-
+            pdf.add_chart_from_bytes(chart_data['cavitation'], 
+                                   'Figure 2: ISA RP75.23 Cavitation Analysis')
+        
         # CHART 3: Valve Characteristic
-        if 'characteristic' in chart_files:
+        if 'characteristic' in chart_data and chart_data['characteristic']:
             pdf.add_page()
-            pdf.add_chart(chart_files['characteristic'], 
-                         'Figure 3: Valve Flow Characteristic Curve')
-
+            pdf.add_chart_from_bytes(chart_data['characteristic'], 
+                                   'Figure 3: Valve Flow Characteristic Curve')
+        
         # CHART 4: Pressure Distribution
-        if 'pressure_distribution' in chart_files:
+        if 'pressure_distribution' in chart_data and chart_data['pressure_distribution']:
             pdf.add_page()
-            pdf.add_chart(chart_files['pressure_distribution'], 
-                         'Figure 4: Pressure Distribution Analysis')
-
+            pdf.add_chart_from_bytes(chart_data['pressure_distribution'], 
+                                   'Figure 4: Pressure Distribution Analysis')
+        
+        # CHART 5: Noise Assessment
+        if 'noise_assessment' in chart_data and chart_data['noise_assessment']:
+            pdf.add_page()
+            pdf.add_chart_from_bytes(chart_data['noise_assessment'], 
+                                   'Figure 5: Noise Level Assessment')
+        
+        # CHART 6: Gas Flow Analysis (if applicable)
+        if 'flow_regime' in chart_data and chart_data['flow_regime']:
+            pdf.add_page()
+            pdf.add_chart_from_bytes(chart_data['flow_regime'], 
+                                   'Figure 6: Gas Flow Analysis')
+        
+        # CHART 7: Safety Factor Analysis
+        if 'safety_factors' in chart_data and chart_data['safety_factors']:
+            pdf.add_page()
+            pdf.add_chart_from_bytes(chart_data['safety_factors'], 
+                                   'Figure 7: Safety Factor Breakdown')
+        
         # Add detailed text sections after charts
         pdf.add_page()
         
@@ -802,7 +786,7 @@ def create_comprehensive_pdf_with_charts(report_data, chart_files):
         
         actuator_type = format_safe_actuator_type(inputs.get('actuator_type', 'N/A'))
         pdf.add_key_value_pair("Actuator Type", actuator_type)
-
+        
         # SIZING RESULTS
         pdf.section_header('SIZING RESULTS & ANALYSIS')
         
@@ -829,25 +813,7 @@ def create_comprehensive_pdf_with_charts(report_data, chart_files):
         rangeability = results.get('inherent_rangeability', 'N/A')
         if rangeability != 'N/A':
             pdf.add_key_value_pair("Inherent Rangeability", f"{rangeability}:1")
-
-        # CHART 5: Noise Assessment
-        if 'noise_assessment' in chart_files:
-            pdf.add_page()
-            pdf.add_chart(chart_files['noise_assessment'], 
-                         'Figure 5: Noise Level Assessment')
-
-        # CHART 6: Gas Flow Analysis (if applicable)
-        if 'flow_regime' in chart_files:
-            pdf.add_page()
-            pdf.add_chart(chart_files['flow_regime'], 
-                         'Figure 6: Gas Flow Analysis')
-
-        # CHART 7: Safety Factor Analysis
-        if 'safety_factors' in chart_files:
-            pdf.add_page()
-            pdf.add_chart(chart_files['safety_factors'], 
-                         'Figure 7: Safety Factor Breakdown')
-
+        
         # Continue with remaining sections...
         pdf.add_page()
         
@@ -871,7 +837,7 @@ def create_comprehensive_pdf_with_charts(report_data, chart_files):
             pdf.safe_cell(0, 6, "Trim Recommendation:", 0, 1)
             pdf.set_font('Arial', '', 10)
             pdf.safe_multi_cell(0, 5, recommendation)
-
+        
         # NOISE ANALYSIS
         pdf.section_header('NOISE ANALYSIS')
         
@@ -886,7 +852,7 @@ def create_comprehensive_pdf_with_charts(report_data, chart_files):
         pdf.safe_cell(0, 6, "Noise Control Recommendation:", 0, 1)
         pdf.set_font('Arial', '', 10)
         pdf.safe_multi_cell(0, 5, clean_unicode_for_pdf(noise_rec))
-
+        
         # ACTUATOR ANALYSIS
         pdf.section_header('ACTUATOR REQUIREMENTS')
         
@@ -911,7 +877,7 @@ def create_comprehensive_pdf_with_charts(report_data, chart_files):
         pdf.safe_cell(0, 6, "Actuator Recommendation:", 0, 1)
         pdf.set_font('Arial', '', 10)
         pdf.safe_multi_cell(0, 5, clean_unicode_for_pdf(actuator_rec))
-
+        
         # MATERIAL SELECTION
         if 'recommendations' in results:
             pdf.section_header('MATERIAL SELECTION')
@@ -931,7 +897,7 @@ def create_comprehensive_pdf_with_charts(report_data, chart_files):
                 pdf.safe_cell(0, 6, "Standards Compliance:", 0, 1)
                 pdf.set_font('Arial', '', 10)
                 pdf.safe_multi_cell(0, 5, clean_unicode_for_pdf(results['compliance_check']))
-
+        
         # PROFESSIONAL DISCLAIMERS
         pdf.section_header('PROFESSIONAL DISCLAIMERS & NOTES')
         
@@ -957,13 +923,228 @@ def create_comprehensive_pdf_with_charts(report_data, chart_files):
                       "Professional engineering review is recommended for critical applications.")
         pdf.safe_multi_cell(0, 4, footer_text)
         
-        return bytes(pdf.output(dest='S'), 'latin1')
-        
+        return bytes(pdf.output(dest='S'), 'latin-1')
+    
     except Exception as e:
         print(f"PDF with charts generation error: {e}")
         raise e
 
-# Include all the helper functions from the previous version
+def create_html_to_pdf_report(report_data, chart_data):
+    """Create PDF using HTML template and WeasyPrint as backup method"""
+    try:
+        from weasyprint import HTML
+        import base64
+    except ImportError:
+        raise ImportError("WeasyPrint not available")
+    
+    # Convert chart byte streams to base64 for HTML embedding
+    charts_b64 = {}
+    for chart_name, chart_bytes in chart_data.items():
+        if chart_bytes:
+            chart_bytes.seek(0)
+            img_b64 = base64.b64encode(chart_bytes.read()).decode()
+            charts_b64[chart_name] = img_b64
+    
+    # Create HTML template
+    inputs = report_data.get('inputs', {})
+    results = report_data.get('results', {})
+    
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Control Valve Sizing Report</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 40px; }}
+            .header {{ text-align: center; margin-bottom: 30px; }}
+            .section {{ margin: 20px 0; }}
+            .section-title {{ background-color: #f0f0f0; padding: 8px; font-weight: bold; font-size: 14px; }}
+            .chart {{ text-align: center; margin: 20px 0; page-break-inside: avoid; }}
+            .chart img {{ max-width: 100%; height: auto; }}
+            .key-value {{ margin: 5px 0; }}
+            .key {{ font-weight: bold; display: inline-block; width: 200px; }}
+            .value {{ display: inline-block; }}
+            @page {{ margin: 1in; }}
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>CONTROL VALVE SIZING REPORT</h1>
+            <p><i>Professional Engineering Analysis with Visual Charts</i></p>
+            <p>Generated: {report_data.get('report_date', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))}</p>
+        </div>
+        
+        <div class="section">
+            <div class="section-title">EXECUTIVE SUMMARY</div>
+            <div class="key-value"><span class="key">Required Cv:</span> <span class="value">{results.get('cv', 'N/A')}</span></div>
+            <div class="key-value"><span class="key">Cavitation Risk:</span> <span class="value">{results.get('sigma_analysis', {}).get('risk', 'N/A')}</span></div>
+            <div class="key-value"><span class="key">Noise Level:</span> <span class="value">{results.get('total_noise_dba', 'N/A')} dBA</span></div>
+        </div>
+    """
+    
+    # Add charts
+    chart_titles = {
+        'valve_opening': 'Figure 1: Valve Opening Validation Across Flow Scenarios',
+        'cavitation': 'Figure 2: ISA RP75.23 Cavitation Analysis',
+        'characteristic': 'Figure 3: Valve Flow Characteristic Curve',
+        'pressure_distribution': 'Figure 4: Pressure Distribution Analysis',
+        'noise_assessment': 'Figure 5: Noise Level Assessment',
+        'flow_regime': 'Figure 6: Gas Flow Analysis',
+        'safety_factors': 'Figure 7: Safety Factor Breakdown'
+    }
+    
+    for chart_name, title in chart_titles.items():
+        if chart_name in charts_b64:
+            html_content += f"""
+            <div class="chart">
+                <h3>{title}</h3>
+                <img src="data:image/png;base64,{charts_b64[chart_name]}" alt="{title}">
+            </div>
+            """
+    
+    # Add process conditions section
+    html_content += f"""
+        <div class="section">
+            <div class="section-title">PROCESS CONDITIONS</div>
+            <div class="key-value"><span class="key">Fluid Type:</span> <span class="value">{inputs.get('fluid_type', 'N/A')}</span></div>
+            <div class="key-value"><span class="key">Flow Rate:</span> <span class="value">{inputs.get('flow_rate', 'N/A')} {get_safe_flow_unit(inputs)}</span></div>
+            <div class="key-value"><span class="key">Inlet Pressure:</span> <span class="value">{inputs.get('p1', 'N/A')} {get_safe_pressure_unit(inputs)}</span></div>
+            <div class="key-value"><span class="key">Outlet Pressure:</span> <span class="value">{inputs.get('p2', 'N/A')} {get_safe_pressure_unit(inputs)}</span></div>
+            <div class="key-value"><span class="key">Temperature:</span> <span class="value">{inputs.get('t1', 'N/A')} {get_safe_temp_unit(inputs)}</span></div>
+        </div>
+        
+        <div class="section">
+            <div class="section-title">VALVE SELECTION</div>
+            <div class="key-value"><span class="key">Valve Type:</span> <span class="value">{inputs.get('valve_type', 'N/A')}</span></div>
+            <div class="key-value"><span class="key">Nominal Size:</span> <span class="value">{inputs.get('valve_size_nominal', 'N/A')} inches</span></div>
+            <div class="key-value"><span class="key">Flow Characteristic:</span> <span class="value">{inputs.get('valve_char', 'N/A')}</span></div>
+            <div class="key-value"><span class="key">Actuator Type:</span> <span class="value">{format_safe_actuator_type(inputs.get('actuator_type', 'N/A'))}</span></div>
+        </div>
+    </body>
+    </html>
+    """
+    
+    # Convert HTML to PDF
+    pdf_bytes = HTML(string=html_content).write_pdf()
+    return pdf_bytes
+
+def create_basic_pdf_with_essential_data(report_data):
+    """Create basic PDF with essential data (fallback method)"""
+    try:
+        from fpdf import FPDF
+    except ImportError:
+        raise ImportError("fpdf2 library not available")
+    
+    pdf = FPDF()
+    pdf.add_page()
+    
+    # Title
+    pdf.set_font('Arial', 'B', 16)
+    pdf.cell(0, 10, 'CONTROL VALVE SIZING REPORT', 0, 1, 'C')
+    pdf.ln(10)
+    
+    inputs = report_data.get('inputs', {})
+    results = report_data.get('results', {})
+    
+    # Essential results
+    pdf.set_font('Arial', 'B', 14)
+    pdf.cell(0, 8, 'SIZING RESULTS', 0, 1)
+    pdf.set_font('Arial', '', 12)
+    
+    cv_value = results.get('cv', 'N/A')
+    pdf.cell(0, 6, f'Required Cv: {cv_value}', 0, 1)
+    pdf.cell(0, 6, f'Rated Cv: {results.get("rated_cv", "N/A")}', 0, 1)
+    pdf.cell(0, 6, f'Rangeability: {results.get("inherent_rangeability", "N/A")}:1', 0, 1)
+    
+    # Process conditions
+    pdf.ln(5)
+    pdf.set_font('Arial', 'B', 14)
+    pdf.cell(0, 8, 'PROCESS CONDITIONS', 0, 1)
+    pdf.set_font('Arial', '', 12)
+    
+    pdf.cell(0, 6, f'Fluid Type: {inputs.get("fluid_type", "N/A")}', 0, 1)
+    pdf.cell(0, 6, f'Flow Rate: {inputs.get("flow_rate", "N/A")} {get_safe_flow_unit(inputs)}', 0, 1)
+    pdf.cell(0, 6, f'Inlet Pressure: {inputs.get("p1", "N/A")} {get_safe_pressure_unit(inputs)}', 0, 1)
+    pdf.cell(0, 6, f'Outlet Pressure: {inputs.get("p2", "N/A")} {get_safe_pressure_unit(inputs)}', 0, 1)
+    
+    # Valve selection
+    pdf.ln(5)
+    pdf.set_font('Arial', 'B', 14)
+    pdf.cell(0, 8, 'VALVE SELECTION', 0, 1)
+    pdf.set_font('Arial', '', 12)
+    
+    pdf.cell(0, 6, f'Valve Type: {inputs.get("valve_type", "N/A")}', 0, 1)
+    pdf.cell(0, 6, f'Nominal Size: {inputs.get("valve_size_nominal", "N/A")} inches', 0, 1)
+    pdf.cell(0, 6, f'Flow Characteristic: {inputs.get("valve_char", "N/A")}', 0, 1)
+    
+    # Analysis summary
+    pdf.ln(5)
+    pdf.set_font('Arial', 'B', 14)
+    pdf.cell(0, 8, 'ANALYSIS SUMMARY', 0, 1)
+    pdf.set_font('Arial', '', 12)
+    
+    if 'sigma_analysis' in results:
+        sigma_data = results['sigma_analysis']
+        pdf.cell(0, 6, f'Cavitation Level: {sigma_data.get("level", "N/A")}', 0, 1)
+        pdf.cell(0, 6, f'Cavitation Risk: {sigma_data.get("risk", "N/A")}', 0, 1)
+    
+    noise_level = results.get('total_noise_dba', 0)
+    if isinstance(noise_level, (int, float)):
+        pdf.cell(0, 6, f'Noise Level: {noise_level:.1f} dBA', 0, 1)
+    
+    # Note about charts
+    pdf.ln(10)
+    pdf.set_font('Arial', 'I', 10)
+    pdf.multi_cell(0, 5, 'Note: This is a basic report. Full visual analysis charts are available in the complete version with proper PDF libraries installed.')
+    
+    return bytes(pdf.output(dest='S'), 'latin-1')
+
+def create_minimal_pdf_report(report_data):
+    """Create minimal PDF report (ultimate fallback)"""
+    try:
+        from fpdf import FPDF
+        
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font('Arial', 'B', 16)
+        pdf.cell(0, 10, 'CONTROL VALVE SIZING REPORT', 0, 1, 'C')
+        
+        # Add basic content
+        inputs = report_data.get('inputs', {})
+        results = report_data.get('results', {})
+        
+        pdf.set_font('Arial', '', 12)
+        pdf.ln(10)
+        
+        # Key results only
+        cv_value = results.get('cv', 'N/A')
+        pdf.cell(0, 8, f'Required Cv: {cv_value}', 0, 1)
+        
+        pdf.ln(5)
+        pdf.cell(0, 6, f'Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}', 0, 1)
+        pdf.cell(0, 6, f'Status: Basic report due to library limitations', 0, 1)
+        
+        pdf.ln(10)
+        pdf.multi_cell(0, 6, 'This is a minimal report. For complete analysis with charts and detailed calculations, ensure fpdf2 and matplotlib libraries are properly installed.')
+        
+        return bytes(pdf.output(dest='S'), 'latin-1')
+        
+    except Exception as e:
+        # Ultimate fallback - create basic content as bytes
+        basic_content = f"""
+CONTROL VALVE SIZING REPORT
+===========================
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+Required Cv: {results.get('cv', 'N/A')}
+Error: Could not generate PDF: {e}
+
+Please install required libraries:
+pip install fpdf2 matplotlib numpy
+"""
+        return basic_content.encode('utf-8')
+
+# Include all the helper functions
 def get_safe_flow_unit(inputs):
     try:
         if inputs.get('fluid_type') == 'Liquid':
@@ -984,12 +1165,6 @@ def get_safe_temp_unit(inputs):
         return 'C' if inputs.get('unit_system') == 'Metric' else 'F'
     except:
         return 'temp_units'
-
-def get_safe_density_unit(inputs):
-    try:
-        return 'kg/m3' if inputs.get('unit_system') == 'Metric' else 'SG'
-    except:
-        return 'density_units'
 
 def get_safe_force_unit(inputs):
     try:
@@ -1015,96 +1190,3 @@ def format_safe_actuator_type(actuator_type):
         return type_map.get(actuator_type, str(actuator_type))
     except:
         return 'Unknown'
-
-def create_comprehensive_text_report(report_data):
-    """Create comprehensive text report as fallback"""
-    inputs = report_data.get('inputs', {})
-    results = report_data.get('results', {})
-    
-    report = f"""
-===============================
-CONTROL VALVE SIZING REPORT
-===============================
-Generated: {report_data.get('report_date', 'Unknown')}
-Software: Enhanced Valve Sizing Application v2.0 with Charts
-Standards: {', '.join(report_data.get('standards_compliance', ['ISA S75.01', 'IEC 60534']))}
-
-EXECUTIVE SUMMARY:
-==================
-Required Cv: {results.get('cv', 'N/A')}
-Sizing Status: {'ACCEPTABLE' if results.get('rangeability_validation', {}).get('overall_valid', False) else 'UNDER REVIEW'}
-Cavitation Risk: {results.get('sigma_analysis', {}).get('risk', 'Unknown')}
-Noise Level: {results.get('total_noise_dba', 'N/A')} dBA
-
-[Note: Full report includes 7 engineering charts for visual analysis]
-
-PROCESS CONDITIONS:
-==================
-Fluid Type: {inputs.get('fluid_type', 'N/A')}
-Fluid Name: {inputs.get('fluid_name', 'N/A')}
-Service Criticality: {inputs.get('service_criticality', 'N/A')}
-
-Operating Conditions:
-Flow Rate: {inputs.get('flow_rate', 'N/A')} {get_safe_flow_unit(inputs)}
-Inlet Pressure (P1): {inputs.get('p1', 'N/A')} {get_safe_pressure_unit(inputs)}
-Outlet Pressure (P2): {inputs.get('p2', 'N/A')} {get_safe_pressure_unit(inputs)}
-Temperature: {inputs.get('t1', 'N/A')} {get_safe_temp_unit(inputs)}
-
-SIZING RESULTS:
-===============
-Required Cv: {results.get('cv', 'N/A')}
-Reynolds Factor (FR): {results.get('reynolds_factor', 'N/A')}
-FF Factor: {results.get('ff_factor', 'N/A')}
-Rated Cv: {results.get('rated_cv', 'N/A')}
-Rangeability: {results.get('inherent_rangeability', 'N/A')}:1
-
-VISUAL ANALYSIS INCLUDED:
-========================
-- Figure 1: Valve Opening Validation Chart
-- Figure 2: ISA RP75.23 Cavitation Analysis
-- Figure 3: Valve Flow Characteristic Curve  
-- Figure 4: Pressure Distribution Analysis
-- Figure 5: Noise Level Assessment
-- Figure 6: Gas Flow Analysis (if applicable)
-- Figure 7: Safety Factor Breakdown
-
-This report provides preliminary valve sizing results with comprehensive visual analysis.
-Final selection should be verified with manufacturer software.
-
-Professional engineering review recommended for critical applications.
-===============================
-END OF REPORT
-===============================
-"""
-    
-    return clean_unicode_for_pdf(report)
-
-def create_pdf_with_reportlab_unicode(report_data):
-    """ReportLab fallback version"""
-    try:
-        from reportlab.lib.pagesizes import letter
-        from reportlab.platypus import SimpleDocDocument, Paragraph
-        from reportlab.lib.styles import getSampleStyleSheet
-        
-        buffer = io.BytesIO()
-        doc = SimpleDocDocument(buffer, pagesize=letter)
-        styles = getSampleStyleSheet()
-        story = []
-        
-        title = clean_unicode_for_pdf("CONTROL VALVE SIZING REPORT WITH CHARTS")
-        story.append(Paragraph(title, styles['Title']))
-        
-        content = create_comprehensive_text_report(report_data)
-        for line in content.split('\n'):
-            if line.strip():
-                cleaned_line = clean_unicode_for_pdf(line)
-                story.append(Paragraph(cleaned_line, styles['Normal']))
-        
-        doc.build(story)
-        buffer.seek(0)
-        return buffer.getvalue()
-    except ImportError:
-        raise ImportError("ReportLab not available")
-    except Exception as e:
-        print(f"ReportLab error: {e}")
-        raise e
