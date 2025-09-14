@@ -9,3 +9,4 @@ weasyprint
 kaleido
 scipy
 matplotlib
+Pillow
