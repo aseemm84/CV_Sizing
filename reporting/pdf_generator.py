@@ -1,6 +1,5 @@
 """
 Enhanced Professional PDF Generator with Charts and Graphs
-Generates comprehensive reports with visual analysis
 """
 from datetime import datetime
 import io
@@ -547,8 +546,22 @@ def clean_unicode_for_pdf(text):
     
     return cleaned_text
 
+def truncate_text_to_fit(text, max_width, font_size=10):
+    """Truncate text to fit within specified width"""
+    if not text:
+        return ""
+    
+    # Approximate character width (rough estimate for Arial)
+    char_width = font_size * 0.6  # pixels per character
+    max_chars = int(max_width / char_width)
+    
+    if len(text) <= max_chars:
+        return text
+    else:
+        return text[:max_chars-3] + "..."
+
 def create_comprehensive_pdf_with_charts(report_data, chart_data):
-    """Create comprehensive professional PDF with embedded charts"""
+    """Create comprehensive professional PDF with embedded charts - FIXED VERSION"""
     try:
         from fpdf import FPDF
     except ImportError:
@@ -573,17 +586,23 @@ def create_comprehensive_pdf_with_charts(report_data, chart_data):
             except Exception as e:
                 print(f"Footer error: {e}")
         
-        def safe_cell(self, w, h, txt='', border=0, ln=0, align='', fill=False):
+        def safe_cell(self, w, h, txt='', border=0, ln=0, align='', fill=False, max_width=None):
+            """Enhanced safe_cell with text truncation"""
             try:
                 cleaned_txt = clean_unicode_for_pdf(str(txt))
+                if max_width:
+                    cleaned_txt = truncate_text_to_fit(cleaned_txt, max_width)
                 self.cell(w, h, cleaned_txt, border, ln, align, fill)
             except Exception as e:
                 print(f"Cell error: {e}")
                 self.cell(w, h, "Data unavailable", border, ln, align, fill)
         
-        def safe_multi_cell(self, w, h, txt, border=0, align='L', fill=False):
+        def safe_multi_cell(self, w, h, txt, border=0, align='L', fill=False, max_chars=None):
+            """Enhanced safe_multi_cell with better text handling"""
             try:
                 cleaned_txt = clean_unicode_for_pdf(str(txt))
+                if max_chars and len(cleaned_txt) > max_chars:
+                    cleaned_txt = cleaned_txt[:max_chars-3] + "..."
                 self.multi_cell(w, h, cleaned_txt, border, align, fill)
             except Exception as e:
                 print(f"Multi-cell error: {e}")
@@ -598,12 +617,18 @@ def create_comprehensive_pdf_with_charts(report_data, chart_data):
             self.set_font('Arial', '', 10)
             self.ln(2)
         
-        def add_key_value_pair(self, key, value, indent=0):
+        def add_key_value_pair(self, key, value, indent=0, key_width=70):
+            """Enhanced key-value with better width management"""
             self.safe_cell(indent, 6, '', 0, 0)
             self.set_font('Arial', 'B', 10)
-            self.safe_cell(80, 6, f"{key}:", 0, 0)
+            # Truncate key if too long
+            key_text = truncate_text_to_fit(str(key), key_width)
+            self.safe_cell(key_width, 6, f"{key_text}:", 0, 0)
             self.set_font('Arial', '', 10)
-            self.safe_cell(0, 6, str(value), 0, 1)
+            # Calculate remaining width for value
+            remaining_width = self.w - self.l_margin - self.r_margin - indent - key_width
+            value_text = truncate_text_to_fit(str(value), remaining_width)
+            self.safe_cell(0, 6, value_text, 0, 1)
         
         def add_chart_from_bytes(self, chart_bytes, title, width=160, height=None):
             """Add chart to PDF from byte stream with title"""
@@ -657,7 +682,8 @@ def create_comprehensive_pdf_with_charts(report_data, chart_data):
         
         # Standards compliance
         standards = ['ISA S75.01/IEC 60534-2-1', 'ISA RP75.23', 'IEC 60534-8-3', 'API 6D', 'NACE MR0175', 'ASME B16.34']
-        pdf.safe_cell(0, 6, f"Standards: {', '.join(standards)}", 0, 1)
+        standards_text = ', '.join(standards)
+        pdf.safe_multi_cell(0, 6, f"Standards: {standards_text}", max_chars=200)
         
         # EXECUTIVE SUMMARY
         pdf.section_header('EXECUTIVE SUMMARY')
@@ -836,7 +862,7 @@ def create_comprehensive_pdf_with_charts(report_data, chart_data):
             pdf.set_font('Arial', 'B', 10)
             pdf.safe_cell(0, 6, "Trim Recommendation:", 0, 1)
             pdf.set_font('Arial', '', 10)
-            pdf.safe_multi_cell(0, 5, recommendation)
+            pdf.safe_multi_cell(0, 5, recommendation, max_chars=500)
         
         # NOISE ANALYSIS
         pdf.section_header('NOISE ANALYSIS')
@@ -851,7 +877,7 @@ def create_comprehensive_pdf_with_charts(report_data, chart_data):
         pdf.set_font('Arial', 'B', 10)
         pdf.safe_cell(0, 6, "Noise Control Recommendation:", 0, 1)
         pdf.set_font('Arial', '', 10)
-        pdf.safe_multi_cell(0, 5, clean_unicode_for_pdf(noise_rec))
+        pdf.safe_multi_cell(0, 5, clean_unicode_for_pdf(noise_rec), max_chars=500)
         
         # ACTUATOR ANALYSIS
         pdf.section_header('ACTUATOR REQUIREMENTS')
@@ -876,7 +902,7 @@ def create_comprehensive_pdf_with_charts(report_data, chart_data):
         pdf.set_font('Arial', 'B', 10)
         pdf.safe_cell(0, 6, "Actuator Recommendation:", 0, 1)
         pdf.set_font('Arial', '', 10)
-        pdf.safe_multi_cell(0, 5, clean_unicode_for_pdf(actuator_rec))
+        pdf.safe_multi_cell(0, 5, clean_unicode_for_pdf(actuator_rec), max_chars=500)
         
         # MATERIAL SELECTION
         if 'recommendations' in results:
@@ -896,7 +922,7 @@ def create_comprehensive_pdf_with_charts(report_data, chart_data):
                 pdf.set_font('Arial', 'B', 10)
                 pdf.safe_cell(0, 6, "Standards Compliance:", 0, 1)
                 pdf.set_font('Arial', '', 10)
-                pdf.safe_multi_cell(0, 5, clean_unicode_for_pdf(results['compliance_check']))
+                pdf.safe_multi_cell(0, 5, clean_unicode_for_pdf(results['compliance_check']), max_chars=500)
         
         # PROFESSIONAL DISCLAIMERS
         pdf.section_header('PROFESSIONAL DISCLAIMERS & NOTES')
@@ -912,7 +938,7 @@ def create_comprehensive_pdf_with_charts(report_data, chart_data):
         ]
         
         for disclaimer in disclaimers:
-            pdf.safe_multi_cell(0, 5, disclaimer)
+            pdf.safe_multi_cell(0, 5, disclaimer, max_chars=500)
             pdf.ln(1)
         
         pdf.ln(5)
@@ -921,7 +947,7 @@ def create_comprehensive_pdf_with_charts(report_data, chart_data):
         footer_text = ("This enhanced report includes visual analysis charts to support engineering decisions. "
                       "All charts are generated from calculated data following industry standards. "
                       "Professional engineering review is recommended for critical applications.")
-        pdf.safe_multi_cell(0, 4, footer_text)
+        pdf.safe_multi_cell(0, 4, footer_text, max_chars=500)
         
         return bytes(pdf.output(dest='S'), 'latin-1')
     
@@ -956,15 +982,15 @@ def create_html_to_pdf_report(report_data, chart_data):
         <meta charset="UTF-8">
         <title>Control Valve Sizing Report</title>
         <style>
-            body {{ font-family: Arial, sans-serif; margin: 40px; }}
+            body {{ font-family: Arial, sans-serif; margin: 40px; line-height: 1.4; }}
             .header {{ text-align: center; margin-bottom: 30px; }}
-            .section {{ margin: 20px 0; }}
+            .section {{ margin: 20px 0; page-break-inside: avoid; }}
             .section-title {{ background-color: #f0f0f0; padding: 8px; font-weight: bold; font-size: 14px; }}
             .chart {{ text-align: center; margin: 20px 0; page-break-inside: avoid; }}
             .chart img {{ max-width: 100%; height: auto; }}
-            .key-value {{ margin: 5px 0; }}
-            .key {{ font-weight: bold; display: inline-block; width: 200px; }}
-            .value {{ display: inline-block; }}
+            .key-value {{ margin: 5px 0; word-wrap: break-word; }}
+            .key {{ font-weight: bold; display: inline-block; width: 180px; vertical-align: top; }}
+            .value {{ display: inline-block; max-width: 300px; word-wrap: break-word; }}
             @page {{ margin: 1in; }}
         </style>
     </head>
