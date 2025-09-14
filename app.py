@@ -22,7 +22,11 @@ def load_logo():
     try:
         
         logo_html = """
-        https://github.com/aseemm84/CV_Sizing/blob/main/valve_image.png
+        <div style="text-align: center; padding: 10px; background: linear-gradient(135deg, #003366 0%, #0066cc 100%); border-radius: 10px; margin-bottom: 20px;">
+            <h2 style="color: white; margin: 0; font-family: 'Arial', sans-serif; font-weight: bold;">⚙️ CONTROL VALVE</h2>
+            <h3 style="color: #66ccff; margin: 0; font-family: 'Arial', sans-serif; font-weight: normal;">SIZING & SELECTION</h3>
+            <p style="color: #cccccc; margin: 5px 0 0 0; font-size: 12px;">Professional Engineering Tool</p>
+        </div>
         """
         return logo_html
     except Exception as e:
