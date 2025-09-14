@@ -8,3 +8,4 @@ reportlab
 weasyprint
 kaleido
 scipy
+matplotlib
