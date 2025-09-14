@@ -105,8 +105,8 @@ with st.sidebar:
         <p style="margin: 0; font-size: 12px; color: #666;">
             <strong>Enhanced Professional-Grade Application</strong><br>
             by <strong>Aseem Mehrotra</strong><br>
-            <em>Senior Instrumentation Construction Engineer</em><br>
-            <em>KBR Inc</em>
+            <em></em><br>
+            <em></em>
         </p>
     </div>
     """
