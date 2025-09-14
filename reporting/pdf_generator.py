@@ -1,5 +1,6 @@
 """
-Enhanced Professional PDF Generator with Charts and Graphs
+FINAL FIXED Professional PDF Generator - Addresses Text Truncation Issues
+This version completely resolves the cell width and text display problems
 """
 from datetime import datetime
 import io
@@ -14,7 +15,7 @@ import numpy as np
 def create_pdf_report(report_data):
     """
     Create comprehensive PDF report with charts and graphs
-    Enhanced with better error handling and robust fallbacks
+    FINAL VERSION - Fixed text truncation issues
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"valve_sizing_report_{timestamp}.pdf"
@@ -546,22 +547,8 @@ def clean_unicode_for_pdf(text):
     
     return cleaned_text
 
-def truncate_text_to_fit(text, max_width, font_size=10):
-    """Truncate text to fit within specified width"""
-    if not text:
-        return ""
-    
-    # Approximate character width (rough estimate for Arial)
-    char_width = font_size * 0.6  # pixels per character
-    max_chars = int(max_width / char_width)
-    
-    if len(text) <= max_chars:
-        return text
-    else:
-        return text[:max_chars-3] + "..."
-
 def create_comprehensive_pdf_with_charts(report_data, chart_data):
-    """Create comprehensive professional PDF with embedded charts - FIXED VERSION"""
+    """Create comprehensive professional PDF with embedded charts - FINAL FIXED VERSION"""
     try:
         from fpdf import FPDF
     except ImportError:
@@ -586,23 +573,19 @@ def create_comprehensive_pdf_with_charts(report_data, chart_data):
             except Exception as e:
                 print(f"Footer error: {e}")
         
-        def safe_cell(self, w, h, txt='', border=0, ln=0, align='', fill=False, max_width=None):
-            """Enhanced safe_cell with text truncation"""
+        def safe_cell(self, w, h, txt='', border=0, ln=0, align='', fill=False):
+            """Fixed safe_cell without width limitations"""
             try:
                 cleaned_txt = clean_unicode_for_pdf(str(txt))
-                if max_width:
-                    cleaned_txt = truncate_text_to_fit(cleaned_txt, max_width)
                 self.cell(w, h, cleaned_txt, border, ln, align, fill)
             except Exception as e:
                 print(f"Cell error: {e}")
                 self.cell(w, h, "Data unavailable", border, ln, align, fill)
         
-        def safe_multi_cell(self, w, h, txt, border=0, align='L', fill=False, max_chars=None):
-            """Enhanced safe_multi_cell with better text handling"""
+        def safe_multi_cell(self, w, h, txt, border=0, align='L', fill=False):
+            """Fixed safe_multi_cell without character limits"""
             try:
                 cleaned_txt = clean_unicode_for_pdf(str(txt))
-                if max_chars and len(cleaned_txt) > max_chars:
-                    cleaned_txt = cleaned_txt[:max_chars-3] + "..."
                 self.multi_cell(w, h, cleaned_txt, border, align, fill)
             except Exception as e:
                 print(f"Multi-cell error: {e}")
@@ -617,18 +600,34 @@ def create_comprehensive_pdf_with_charts(report_data, chart_data):
             self.set_font('Arial', '', 10)
             self.ln(2)
         
-        def add_key_value_pair(self, key, value, indent=0, key_width=70):
-            """Enhanced key-value with better width management"""
-            self.safe_cell(indent, 6, '', 0, 0)
+        def add_key_value_pair_fixed(self, key, value, indent=0):
+            """COMPLETELY FIXED key-value pair method"""
+            # Calculate available width
+            page_width = self.w - self.l_margin - self.r_margin
+            key_width = 80  # Fixed width for key
+            value_width = page_width - key_width - indent
+            
+            # Add indent
+            if indent > 0:
+                self.safe_cell(indent, 6, '', 0, 0)
+            
+            # Key (bold)
             self.set_font('Arial', 'B', 10)
-            # Truncate key if too long
-            key_text = truncate_text_to_fit(str(key), key_width)
-            self.safe_cell(key_width, 6, f"{key_text}:", 0, 0)
+            self.safe_cell(key_width, 6, f"{str(key)}:", 0, 0)
+            
+            # Value (normal) - use multi_cell for long values
             self.set_font('Arial', '', 10)
-            # Calculate remaining width for value
-            remaining_width = self.w - self.l_margin - self.r_margin - indent - key_width
-            value_text = truncate_text_to_fit(str(value), remaining_width)
-            self.safe_cell(0, 6, value_text, 0, 1)
+            value_str = str(value)
+            
+            # If value is too long, use multi_cell
+            if len(value_str) > 50:  # Threshold for long text
+                self.ln(6)  # Move to next line
+                if indent > 0:
+                    self.safe_cell(indent, 0, '', 0, 0)
+                self.safe_cell(key_width, 0, '', 0, 0)  # Align with value column
+                self.safe_multi_cell(value_width, 6, value_str)
+            else:
+                self.safe_cell(value_width, 6, value_str, 0, 1)
         
         def add_chart_from_bytes(self, chart_bytes, title, width=160, height=None):
             """Add chart to PDF from byte stream with title"""
@@ -680,10 +679,13 @@ def create_comprehensive_pdf_with_charts(report_data, chart_data):
         pdf.safe_cell(0, 6, f"Software: Enhanced Valve Sizing Application v2.0", 0, 1)
         pdf.safe_cell(0, 6, f"Analysis: Professional Engineering with Visual Charts", 0, 1)
         
-        # Standards compliance
+        # Standards compliance - use multi_cell for long text
         standards = ['ISA S75.01/IEC 60534-2-1', 'ISA RP75.23', 'IEC 60534-8-3', 'API 6D', 'NACE MR0175', 'ASME B16.34']
         standards_text = ', '.join(standards)
-        pdf.safe_multi_cell(0, 6, f"Standards: {standards_text}", max_chars=200)
+        pdf.set_font('Arial', 'B', 10)
+        pdf.safe_cell(0, 6, "Standards:", 0, 1)
+        pdf.set_font('Arial', '', 10)
+        pdf.safe_multi_cell(0, 5, standards_text)
         
         # EXECUTIVE SUMMARY
         pdf.section_header('EXECUTIVE SUMMARY')
@@ -698,7 +700,7 @@ def create_comprehensive_pdf_with_charts(report_data, chart_data):
         pdf.safe_cell(0, 8, f"Required Cv: {cv_text}", 0, 1)
         pdf.set_font('Arial', '', 10)
         
-        # Quick status summary
+        # Quick status summary - FIXED
         rated_cv = results.get('rated_cv', 0)
         if isinstance(cv_value, (int, float)) and isinstance(rated_cv, (int, float)) and rated_cv > 0:
             opening_percent = (cv_value / rated_cv) * 100
@@ -711,17 +713,17 @@ def create_comprehensive_pdf_with_charts(report_data, chart_data):
         else:
             status = "STATUS UNDER EVALUATION"
         
-        pdf.add_key_value_pair("Sizing Status", status)
+        pdf.add_key_value_pair_fixed("Sizing Status", status)
         
         cavitation_risk = results.get('sigma_analysis', {}).get('risk', 'Unknown')
         if cavitation_risk == 'Unknown':
             cavitation_risk = 'Low' if results.get('cavitation_index', 2) > 2 else 'Medium'
-        pdf.add_key_value_pair("Cavitation Risk", cavitation_risk)
+        pdf.add_key_value_pair_fixed("Cavitation Risk", cavitation_risk)
         
         noise_level = results.get('total_noise_dba', 0)
         if isinstance(noise_level, (int, float)):
             noise_status = "ACCEPTABLE" if noise_level < 85 else "HIGH" if noise_level < 110 else "EXTREME"
-            pdf.add_key_value_pair("Noise Level", f"{noise_level:.1f} dBA ({noise_status})")
+            pdf.add_key_value_pair_fixed("Noise Level", f"{noise_level:.1f} dBA ({noise_status})")
         
         # CHART 1: Valve Opening Validation
         if 'valve_opening' in chart_data and chart_data['valve_opening']:
@@ -768,12 +770,12 @@ def create_comprehensive_pdf_with_charts(report_data, chart_data):
         # Add detailed text sections after charts
         pdf.add_page()
         
-        # PROCESS CONDITIONS
+        # PROCESS CONDITIONS - FIXED
         pdf.section_header('PROCESS CONDITIONS')
         
-        pdf.add_key_value_pair("Fluid Type", inputs.get('fluid_type', 'N/A'))
-        pdf.add_key_value_pair("Fluid Name", inputs.get('fluid_name', 'N/A'))
-        pdf.add_key_value_pair("Service Criticality", inputs.get('service_criticality', 'N/A'))
+        pdf.add_key_value_pair_fixed("Fluid Type", inputs.get('fluid_type', 'N/A'))
+        pdf.add_key_value_pair_fixed("Fluid Name", inputs.get('fluid_name', 'N/A'))
+        pdf.add_key_value_pair_fixed("Service Criticality", inputs.get('service_criticality', 'N/A'))
         
         pdf.ln(3)
         pdf.set_font('Arial', 'B', 11)
@@ -782,38 +784,38 @@ def create_comprehensive_pdf_with_charts(report_data, chart_data):
         
         flow_rate = inputs.get('flow_rate', 'N/A')
         flow_unit = get_safe_flow_unit(inputs)
-        pdf.add_key_value_pair("Flow Rate", f"{flow_rate} {flow_unit}", 10)
+        pdf.add_key_value_pair_fixed("Flow Rate", f"{flow_rate} {flow_unit}", 10)
         
         p1 = inputs.get('p1', 'N/A')
         p2 = inputs.get('p2', 'N/A')
         pressure_unit = get_safe_pressure_unit(inputs)
-        pdf.add_key_value_pair("Inlet Pressure (P1)", f"{p1} {pressure_unit}", 10)
-        pdf.add_key_value_pair("Outlet Pressure (P2)", f"{p2} {pressure_unit}", 10)
+        pdf.add_key_value_pair_fixed("Inlet Pressure (P1)", f"{p1} {pressure_unit}", 10)
+        pdf.add_key_value_pair_fixed("Outlet Pressure (P2)", f"{p2} {pressure_unit}", 10)
         
         try:
             if isinstance(p1, (int, float)) and isinstance(p2, (int, float)):
                 dp = p1 - p2
-                pdf.add_key_value_pair("Differential Pressure", f"{dp:.2f} {pressure_unit}", 10)
+                pdf.add_key_value_pair_fixed("Differential Pressure", f"{dp:.2f} {pressure_unit}", 10)
         except:
             pass
         
         temp = inputs.get('t1', 'N/A')
         temp_unit = get_safe_temp_unit(inputs)
-        pdf.add_key_value_pair("Temperature", f"{temp} {temp_unit}", 10)
+        pdf.add_key_value_pair_fixed("Temperature", f"{temp} {temp_unit}", 10)
         
-        # VALVE SELECTION
+        # VALVE SELECTION - FIXED
         pdf.section_header('VALVE SELECTION & CONFIGURATION')
         
-        pdf.add_key_value_pair("Valve Type", inputs.get('valve_type', 'N/A'))
-        pdf.add_key_value_pair("Valve Style", inputs.get('valve_style', 'N/A'))
-        pdf.add_key_value_pair("Nominal Size", f"{inputs.get('valve_size_nominal', 'N/A')} inches")
-        pdf.add_key_value_pair("Flow Characteristic", inputs.get('valve_char', 'N/A'))
-        pdf.add_key_value_pair("Expected Operating Opening", f"{inputs.get('valve_opening_percent', 70)}%")
+        pdf.add_key_value_pair_fixed("Valve Type", inputs.get('valve_type', 'N/A'))
+        pdf.add_key_value_pair_fixed("Valve Style", inputs.get('valve_style', 'N/A'))
+        pdf.add_key_value_pair_fixed("Nominal Size", f"{inputs.get('valve_size_nominal', 'N/A')} inches")
+        pdf.add_key_value_pair_fixed("Flow Characteristic", inputs.get('valve_char', 'N/A'))
+        pdf.add_key_value_pair_fixed("Expected Operating Opening", f"{inputs.get('valve_opening_percent', 70)}%")
         
         actuator_type = format_safe_actuator_type(inputs.get('actuator_type', 'N/A'))
-        pdf.add_key_value_pair("Actuator Type", actuator_type)
+        pdf.add_key_value_pair_fixed("Actuator Type", actuator_type)
         
-        # SIZING RESULTS
+        # SIZING RESULTS - FIXED
         pdf.section_header('SIZING RESULTS & ANALYSIS')
         
         pdf.set_font('Arial', 'B', 12)
@@ -823,27 +825,27 @@ def create_comprehensive_pdf_with_charts(report_data, chart_data):
         if 'reynolds_factor' in results:
             rf = results['reynolds_factor']
             if isinstance(rf, (int, float)):
-                pdf.add_key_value_pair("Reynolds Correction Factor (FR)", f"{rf:.4f}")
+                pdf.add_key_value_pair_fixed("Reynolds Correction Factor (FR)", f"{rf:.4f}")
         
         if 'ff_factor' in results:
             ff = results['ff_factor']
             if isinstance(ff, (int, float)):
-                pdf.add_key_value_pair("FF Factor (Liquid Critical Ratio)", f"{ff:.4f}")
+                pdf.add_key_value_pair_fixed("FF Factor (Liquid Critical Ratio)", f"{ff:.4f}")
         
-        pdf.add_key_value_pair("Rated Cv (Selected Valve)", str(results.get('rated_cv', 'N/A')))
+        pdf.add_key_value_pair_fixed("Rated Cv (Selected Valve)", str(results.get('rated_cv', 'N/A')))
         
         if isinstance(cv_value, (int, float)) and isinstance(rated_cv, (int, float)) and rated_cv > 0:
             opening = (cv_value / rated_cv) * 100
-            pdf.add_key_value_pair("Valve Opening at Design Flow", f"{opening:.1f}%")
+            pdf.add_key_value_pair_fixed("Valve Opening at Design Flow", f"{opening:.1f}%")
         
         rangeability = results.get('inherent_rangeability', 'N/A')
         if rangeability != 'N/A':
-            pdf.add_key_value_pair("Inherent Rangeability", f"{rangeability}:1")
+            pdf.add_key_value_pair_fixed("Inherent Rangeability", f"{rangeability}:1")
         
         # Continue with remaining sections...
         pdf.add_page()
         
-        # CAVITATION ANALYSIS
+        # CAVITATION ANALYSIS - FIXED
         pdf.section_header('CAVITATION ANALYSIS (ISA RP75.23)')
         
         if 'sigma_analysis' in results:
@@ -851,78 +853,78 @@ def create_comprehensive_pdf_with_charts(report_data, chart_data):
             
             sigma_val = sigma_data.get('sigma', 'N/A')
             if isinstance(sigma_val, (int, float)):
-                pdf.add_key_value_pair("Sigma Value", f"{sigma_val:.3f}")
+                pdf.add_key_value_pair_fixed("Sigma Value", f"{sigma_val:.3f}")
             
-            pdf.add_key_value_pair("Cavitation Level", sigma_data.get('level', 'N/A'))
-            pdf.add_key_value_pair("Risk Assessment", sigma_data.get('risk', 'N/A'))
-            pdf.add_key_value_pair("Status", sigma_data.get('status', 'N/A'))
+            pdf.add_key_value_pair_fixed("Cavitation Level", sigma_data.get('level', 'N/A'))
+            pdf.add_key_value_pair_fixed("Risk Assessment", sigma_data.get('risk', 'N/A'))
+            pdf.add_key_value_pair_fixed("Status", sigma_data.get('status', 'N/A'))
             
             recommendation = clean_unicode_for_pdf(str(sigma_data.get('recommendation', 'N/A')))
             pdf.ln(2)
             pdf.set_font('Arial', 'B', 10)
             pdf.safe_cell(0, 6, "Trim Recommendation:", 0, 1)
             pdf.set_font('Arial', '', 10)
-            pdf.safe_multi_cell(0, 5, recommendation, max_chars=500)
+            pdf.safe_multi_cell(0, 5, recommendation)
         
-        # NOISE ANALYSIS
+        # NOISE ANALYSIS - FIXED
         pdf.section_header('NOISE ANALYSIS')
         
         if isinstance(noise_level, (int, float)):
-            pdf.add_key_value_pair("Predicted Noise Level", f"{noise_level:.1f} dBA (at 1m distance)")
+            pdf.add_key_value_pair_fixed("Predicted Noise Level", f"{noise_level:.1f} dBA (at 1m distance)")
         
-        pdf.add_key_value_pair("Prediction Method", results.get('method', 'Standard Calculation'))
+        pdf.add_key_value_pair_fixed("Prediction Method", results.get('method', 'Standard Calculation'))
         
         noise_rec = results.get('noise_recommendation', 'Standard trim acceptable')
         pdf.ln(2)
         pdf.set_font('Arial', 'B', 10)
         pdf.safe_cell(0, 6, "Noise Control Recommendation:", 0, 1)
         pdf.set_font('Arial', '', 10)
-        pdf.safe_multi_cell(0, 5, clean_unicode_for_pdf(noise_rec), max_chars=500)
+        pdf.safe_multi_cell(0, 5, clean_unicode_for_pdf(noise_rec))
         
-        # ACTUATOR ANALYSIS
+        # ACTUATOR ANALYSIS - FIXED
         pdf.section_header('ACTUATOR REQUIREMENTS')
         
         if inputs.get('valve_type') == 'Globe':
             force_val = results.get('required_force', 0)
             if isinstance(force_val, (int, float)):
                 force_unit = get_safe_force_unit(inputs)
-                pdf.add_key_value_pair("Required Thrust", f"{force_val:.0f} {force_unit}")
+                pdf.add_key_value_pair_fixed("Required Thrust", f"{force_val:.0f} {force_unit}")
         else:
             torque_val = results.get('required_torque', 0)
             if isinstance(torque_val, (int, float)):
                 torque_unit = get_safe_torque_unit(inputs)
-                pdf.add_key_value_pair("Required Torque", f"{torque_val:.0f} {torque_unit}")
+                pdf.add_key_value_pair_fixed("Required Torque", f"{torque_val:.0f} {torque_unit}")
         
         safety_factor = results.get('safety_factor_used', 1.5)
         if isinstance(safety_factor, (int, float)):
-            pdf.add_key_value_pair("Safety Factor Applied", f"{safety_factor:.1f}")
+            pdf.add_key_value_pair_fixed("Safety Factor Applied", f"{safety_factor:.1f}")
         
         actuator_rec = results.get('actuator_recommendation', 'Consult manufacturer')
         pdf.ln(2)
         pdf.set_font('Arial', 'B', 10)
         pdf.safe_cell(0, 6, "Actuator Recommendation:", 0, 1)
         pdf.set_font('Arial', '', 10)
-        pdf.safe_multi_cell(0, 5, clean_unicode_for_pdf(actuator_rec), max_chars=500)
+        pdf.safe_multi_cell(0, 5, clean_unicode_for_pdf(actuator_rec))
         
-        # MATERIAL SELECTION
+        # MATERIAL SELECTION - FIXED
         if 'recommendations' in results:
             pdf.section_header('MATERIAL SELECTION')
             
             materials = results['recommendations']
-            pdf.add_key_value_pair("Body Material", materials.get('Body Material', 'N/A'))
-            pdf.add_key_value_pair("Trim Material", materials.get('Trim Material', 'N/A'))
-            pdf.add_key_value_pair("Bolting", materials.get('Bolting', 'N/A'))
-            pdf.add_key_value_pair("Gasket", materials.get('Gasket', 'N/A'))
+            pdf.add_key_value_pair_fixed("Body Material", materials.get('Body Material', 'N/A'))
+            pdf.add_key_value_pair_fixed("Trim Material", materials.get('Trim Material', 'N/A'))
+            pdf.add_key_value_pair_fixed("Bolting", materials.get('Bolting', 'N/A'))
+            pdf.add_key_value_pair_fixed("Gasket", materials.get('Gasket', 'N/A'))
             
             if 'service_category' in results:
-                pdf.add_key_value_pair("Service Category", results['service_category'])
+                pdf.add_key_value_pair_fixed("Service Category", results['service_category'])
             
             if 'compliance_check' in results:
                 pdf.ln(2)
                 pdf.set_font('Arial', 'B', 10)
                 pdf.safe_cell(0, 6, "Standards Compliance:", 0, 1)
                 pdf.set_font('Arial', '', 10)
-                pdf.safe_multi_cell(0, 5, clean_unicode_for_pdf(results['compliance_check']), max_chars=500)
+                pdf.safe_multi_cell(0, 5, clean_unicode_for_pdf(results['compliance_check']))
         
         # PROFESSIONAL DISCLAIMERS
         pdf.section_header('PROFESSIONAL DISCLAIMERS & NOTES')
@@ -938,7 +940,7 @@ def create_comprehensive_pdf_with_charts(report_data, chart_data):
         ]
         
         for disclaimer in disclaimers:
-            pdf.safe_multi_cell(0, 5, disclaimer, max_chars=500)
+            pdf.safe_multi_cell(0, 5, disclaimer)
             pdf.ln(1)
         
         pdf.ln(5)
@@ -947,7 +949,7 @@ def create_comprehensive_pdf_with_charts(report_data, chart_data):
         footer_text = ("This enhanced report includes visual analysis charts to support engineering decisions. "
                       "All charts are generated from calculated data following industry standards. "
                       "Professional engineering review is recommended for critical applications.")
-        pdf.safe_multi_cell(0, 4, footer_text, max_chars=500)
+        pdf.safe_multi_cell(0, 4, footer_text)
         
         return bytes(pdf.output(dest='S'), 'latin-1')
     
@@ -971,7 +973,7 @@ def create_html_to_pdf_report(report_data, chart_data):
             img_b64 = base64.b64encode(chart_bytes.read()).decode()
             charts_b64[chart_name] = img_b64
     
-    # Create HTML template
+    # Create HTML template with better layout
     inputs = report_data.get('inputs', {})
     results = report_data.get('results', {})
     
@@ -982,16 +984,41 @@ def create_html_to_pdf_report(report_data, chart_data):
         <meta charset="UTF-8">
         <title>Control Valve Sizing Report</title>
         <style>
-            body {{ font-family: Arial, sans-serif; margin: 40px; line-height: 1.4; }}
+            body {{ 
+                font-family: Arial, sans-serif; 
+                margin: 30px; 
+                line-height: 1.5; 
+                font-size: 11px;
+            }}
             .header {{ text-align: center; margin-bottom: 30px; }}
-            .section {{ margin: 20px 0; page-break-inside: avoid; }}
-            .section-title {{ background-color: #f0f0f0; padding: 8px; font-weight: bold; font-size: 14px; }}
+            .section {{ margin: 15px 0; page-break-inside: avoid; }}
+            .section-title {{ 
+                background-color: #e6e6e6; 
+                padding: 8px; 
+                font-weight: bold; 
+                font-size: 14px; 
+                margin-bottom: 10px;
+            }}
             .chart {{ text-align: center; margin: 20px 0; page-break-inside: avoid; }}
             .chart img {{ max-width: 100%; height: auto; }}
-            .key-value {{ margin: 5px 0; word-wrap: break-word; }}
-            .key {{ font-weight: bold; display: inline-block; width: 180px; vertical-align: top; }}
-            .value {{ display: inline-block; max-width: 300px; word-wrap: break-word; }}
-            @page {{ margin: 1in; }}
+            .key-value {{ 
+                margin: 5px 0; 
+                display: flex;
+                word-wrap: break-word; 
+            }}
+            .key {{ 
+                font-weight: bold; 
+                width: 200px; 
+                flex-shrink: 0;
+                padding-right: 10px;
+            }}
+            .value {{ 
+                flex: 1;
+                word-wrap: break-word; 
+                overflow-wrap: break-word;
+            }}
+            @page {{ margin: 0.8in; }}
+            .indent {{ margin-left: 20px; }}
         </style>
     </head>
     <body>
@@ -999,6 +1026,7 @@ def create_html_to_pdf_report(report_data, chart_data):
             <h1>CONTROL VALVE SIZING REPORT</h1>
             <p><i>Professional Engineering Analysis with Visual Charts</i></p>
             <p>Generated: {report_data.get('report_date', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))}</p>
+            <p><strong>Standards:</strong> ISA S75.01/IEC 60534-2-1, ISA RP75.23, IEC 60534-8-3, API 6D, NACE MR0175, ASME B16.34</p>
         </div>
         
         <div class="section">
@@ -1029,23 +1057,37 @@ def create_html_to_pdf_report(report_data, chart_data):
             </div>
             """
     
-    # Add process conditions section
+    # Add detailed sections with proper layout
     html_content += f"""
         <div class="section">
             <div class="section-title">PROCESS CONDITIONS</div>
             <div class="key-value"><span class="key">Fluid Type:</span> <span class="value">{inputs.get('fluid_type', 'N/A')}</span></div>
-            <div class="key-value"><span class="key">Flow Rate:</span> <span class="value">{inputs.get('flow_rate', 'N/A')} {get_safe_flow_unit(inputs)}</span></div>
-            <div class="key-value"><span class="key">Inlet Pressure:</span> <span class="value">{inputs.get('p1', 'N/A')} {get_safe_pressure_unit(inputs)}</span></div>
-            <div class="key-value"><span class="key">Outlet Pressure:</span> <span class="value">{inputs.get('p2', 'N/A')} {get_safe_pressure_unit(inputs)}</span></div>
-            <div class="key-value"><span class="key">Temperature:</span> <span class="value">{inputs.get('t1', 'N/A')} {get_safe_temp_unit(inputs)}</span></div>
+            <div class="key-value"><span class="key">Fluid Name:</span> <span class="value">{inputs.get('fluid_name', 'N/A')}</span></div>
+            <div class="key-value"><span class="key">Service Criticality:</span> <span class="value">{inputs.get('service_criticality', 'N/A')}</span></div>
+            <h4>Operating Conditions:</h4>
+            <div class="key-value indent"><span class="key">Flow Rate:</span> <span class="value">{inputs.get('flow_rate', 'N/A')} {get_safe_flow_unit(inputs)}</span></div>
+            <div class="key-value indent"><span class="key">Inlet Pressure (P1):</span> <span class="value">{inputs.get('p1', 'N/A')} {get_safe_pressure_unit(inputs)}</span></div>
+            <div class="key-value indent"><span class="key">Outlet Pressure (P2):</span> <span class="value">{inputs.get('p2', 'N/A')} {get_safe_pressure_unit(inputs)}</span></div>
+            <div class="key-value indent"><span class="key">Temperature:</span> <span class="value">{inputs.get('t1', 'N/A')} {get_safe_temp_unit(inputs)}</span></div>
         </div>
         
         <div class="section">
-            <div class="section-title">VALVE SELECTION</div>
+            <div class="section-title">VALVE SELECTION & CONFIGURATION</div>
             <div class="key-value"><span class="key">Valve Type:</span> <span class="value">{inputs.get('valve_type', 'N/A')}</span></div>
+            <div class="key-value"><span class="key">Valve Style:</span> <span class="value">{inputs.get('valve_style', 'N/A')}</span></div>
             <div class="key-value"><span class="key">Nominal Size:</span> <span class="value">{inputs.get('valve_size_nominal', 'N/A')} inches</span></div>
             <div class="key-value"><span class="key">Flow Characteristic:</span> <span class="value">{inputs.get('valve_char', 'N/A')}</span></div>
+            <div class="key-value"><span class="key">Expected Operating Opening:</span> <span class="value">{inputs.get('valve_opening_percent', 70)}%</span></div>
             <div class="key-value"><span class="key">Actuator Type:</span> <span class="value">{format_safe_actuator_type(inputs.get('actuator_type', 'N/A'))}</span></div>
+        </div>
+        
+        <div class="section">
+            <div class="section-title">SIZING RESULTS & ANALYSIS</div>
+            <div class="key-value"><span class="key">Required Flow Coefficient (Cv):</span> <span class="value">{results.get('cv', 'N/A')}</span></div>
+            <div class="key-value"><span class="key">Reynolds Correction Factor (FR):</span> <span class="value">{results.get('reynolds_factor', 'N/A')}</span></div>
+            <div class="key-value"><span class="key">FF Factor (Liquid Critical Ratio):</span> <span class="value">{results.get('ff_factor', 'N/A')}</span></div>
+            <div class="key-value"><span class="key">Rated Cv (Selected Valve):</span> <span class="value">{results.get('rated_cv', 'N/A')}</span></div>
+            <div class="key-value"><span class="key">Inherent Rangeability:</span> <span class="value">{results.get('inherent_rangeability', 'N/A')}:1</span></div>
         </div>
     </body>
     </html>
